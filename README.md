@@ -1,36 +1,95 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TraceCase
+
+QA Test Case & Regression Pack Generator (B2B SaaS MVP).
 
 ## Getting Started
 
-First, run the development server:
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Set up environment variables:
+
+```bash
+cp .env.example .env.local
+```
+
+3. Fill `.env.local` with your Clerk credentials from the Clerk Dashboard API keys page:
+
+```bash
+DATABASE_URL=YOUR_NEON_POSTGRES_URL
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
+CLERK_SECRET_KEY=YOUR_SECRET_KEY
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard
+NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard
+```
+
+4. Apply database migrations:
+
+```bash
+npm run db:migrate
+```
+
+5. Run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Auth Routes
+- Public: `/`, `/sign-in`, `/sign-up`
+- Protected: all other routes (including `/dashboard`)
+- Route protection is enforced in `proxy.ts` using `clerkMiddleware()`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Database Setup
 
-## Learn More
+1. Create a Postgres database in Neon.
+2. Set `DATABASE_URL` in `.env.local` at the project root (`/Users/anweshsingh/Downloads/TraceCase/.env.local`).
+3. Apply the existing Prisma migrations:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run db:migrate
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. Open Prisma Studio (optional):
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run db:studio
+```
 
-## Deploy on Vercel
+On first signed-in visit to `/dashboard`, a personal workspace and OWNER membership are auto-provisioned.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Build
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run build
+```
+
+## Manual Test Checklist
+
+1. Set `DATABASE_URL` in `.env.local`.
+2. Run `npm run db:migrate`.
+3. Load `/`.
+4. Click **Go to Dashboard** and confirm redirect to `/sign-in` when signed out.
+5. Sign up/sign in and confirm landing on `/dashboard`.
+6. Confirm workspace info is rendered on `/dashboard`.
+7. Refresh `/dashboard` twice and confirm workspace id remains the same.
+8. Optional: open Prisma Studio and confirm `Workspace` and `Membership` rows exist.
+
+## Stack
+
+- Next.js App Router + TypeScript
+- Tailwind CSS
+- shadcn/ui
+- Clerk (`@clerk/nextjs`)
+- Prisma + Neon Postgres
+
+## Next Milestone
+
+RBAC permission helpers + enforcement points.

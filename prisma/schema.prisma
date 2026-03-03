@@ -1,0 +1,52 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+  REVIEWER
+}
+
+model Workspace {
+  id                  String       @id @default(cuid())
+  name                String
+  clerk_org_id        String?
+  owner_clerk_user_id String?      @unique
+  created_at          DateTime     @default(now())
+  memberships         Membership[]
+  audit_events        AuditEvent[]
+}
+
+model Membership {
+  id            String    @id @default(cuid())
+  workspace_id  String
+  clerk_user_id String
+  role          Role
+  created_at    DateTime  @default(now())
+  workspace     Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+
+  @@unique([workspace_id, clerk_user_id])
+  @@index([clerk_user_id])
+}
+
+model AuditEvent {
+  id                  String    @id @default(cuid())
+  workspace_id        String
+  actor_clerk_user_id String
+  action              String
+  entity_type         String?
+  entity_id           String?
+  metadata_json       Json?
+  created_at          DateTime  @default(now())
+  workspace           Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+
+  @@index([workspace_id, created_at])
+}
