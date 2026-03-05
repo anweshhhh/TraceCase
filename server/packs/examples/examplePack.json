@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "requirement_id": "req_abc123",
+    "requirement_snapshot_id": "snap_xyz789",
+    "requirement_snapshot_version": 2,
+    "source_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "assumptions": [
+    "Users authenticate with email and password.",
+    "MFA is optional for this release."
+  ],
+  "clarifying_questions": [
+    {
+      "id": "Q-001",
+      "question": "Should locked accounts auto-unlock after 15 minutes?",
+      "reason": "Needed for negative path coverage."
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "SCN-001",
+      "title": "Successful login",
+      "description": "User logs in with valid credentials and is redirected to dashboard.",
+      "priority": "P1",
+      "tags": [
+        "auth",
+        "login"
+      ],
+      "test_focus": [
+        "UI",
+        "API",
+        "REGRESSION"
+      ],
+      "source_refs": [
+        {
+          "snapshot_id": "snap_xyz789",
+          "line_start": 1,
+          "line_end": 6
+        }
+      ]
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "TC-001",
+      "scenario_id": "SCN-001",
+      "title": "Login with valid credentials",
+      "layer": "UI",
+      "priority": "P1",
+      "type": "POSITIVE",
+      "preconditions": [
+        "User account exists and is active."
+      ],
+      "test_data": [
+        "email=user@example.com",
+        "password=CorrectPassword123!"
+      ],
+      "steps": [
+        {
+          "step_no": 1,
+          "action": "Open login page and enter valid credentials.",
+          "expected": "Credentials are accepted."
+        },
+        {
+          "step_no": 2,
+          "action": "Submit the login form.",
+          "expected": "User lands on dashboard home."
+        }
+      ],
+      "tags": [
+        "smoke",
+        "auth"
+      ],
+      "source_refs": [
+        {
+          "snapshot_id": "snap_xyz789",
+          "line_start": 2,
+          "line_end": 9
+        }
+      ]
+    }
+  ],
+  "checks": {
+    "api": [
+      {
+        "id": "CHK-API-001",
+        "title": "Login endpoint returns access token",
+        "method": "POST",
+        "endpoint": "/api/v1/auth/login",
+        "assertions": [
+          "Response status is 200.",
+          "Response body contains access_token."
+        ],
+        "source_refs": [
+          {
+            "snapshot_id": "snap_xyz789",
+            "line_start": 4,
+            "line_end": 10
+          }
+        ]
+      }
+    ],
+    "sql": [
+      {
+        "id": "CHK-SQL-001",
+        "title": "Last login timestamp updated",
+        "query_hint": "SELECT last_login_at FROM users WHERE email = ?",
+        "validations": [
+          "last_login_at is not null after successful login."
+        ],
+        "source_refs": [
+          {
+            "snapshot_id": "snap_xyz789",
+            "line_start": 6,
+            "line_end": 11
+          }
+        ]
+      }
+    ],
+    "etl": [
+      {
+        "id": "CHK-ETL-001",
+        "title": "Auth login event emitted",
+        "validations": [
+          "login_success event exists in analytics stream with user id."
+        ],
+        "source_refs": [
+          {
+            "snapshot_id": "snap_xyz789",
+            "line_start": 7,
+            "line_end": 12
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -27,14 +27,19 @@ export function AppShell({ children, role, workspaceId }: AppShellProps) {
             <Button variant="ghost" size="sm" asChild>
               <Link href="/dashboard">Dashboard</Link>
             </Button>
-            {can(role, "workspace:manage_members") ? (
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/dashboard/requirements">Requirements</Link>
+            </Button>
+            {can(role, "audit:view") ? (
               <Button variant="ghost" size="sm" asChild>
-                <Link href="/dashboard/admin">Admin Area</Link>
+                <Link href="/dashboard/audit">Audit Log</Link>
               </Button>
             ) : null}
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/dashboard/reviewer-only">Reviewer Only</Link>
-            </Button>
+            {can(role, "workspace:manage_members") ? (
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/dashboard/admin">RBAC Demo</Link>
+              </Button>
+            ) : null}
           </div>
         </div>
       </header>

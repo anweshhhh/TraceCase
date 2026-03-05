@@ -15,6 +15,42 @@ enum Role {
   REVIEWER
 }
 
+enum RequirementStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum ModuleType {
+  GENERIC
+  LOGIN
+  SIGNUP
+  PAYMENTS
+  CRUD
+  API
+  ETL
+}
+
+enum PackStatus {
+  DRAFT
+  NEEDS_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum ExportStatus {
+  QUEUED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+}
+
 model Workspace {
   id                  String       @id @default(cuid())
   name                String
@@ -23,6 +59,11 @@ model Workspace {
   created_at          DateTime     @default(now())
   memberships         Membership[]
   audit_events        AuditEvent[]
+  requirements        Requirement[]
+  requirement_snapshots RequirementSnapshot[]
+  packs               Pack[]
+  jobs                Job[]
+  exports             Export[]
 }
 
 model Membership {
@@ -49,4 +90,102 @@ model AuditEvent {
   workspace           Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
 
   @@index([workspace_id, created_at])
+}
+
+model Requirement {
+  id                      String            @id @default(cuid())
+  workspace_id            String
+  title                   String
+  module_type             ModuleType        @default(GENERIC)
+  test_focus              String[]          @default([])
+  source_text             String
+  status                  RequirementStatus @default(ACTIVE)
+  created_by_clerk_user_id String
+  created_at              DateTime          @default(now())
+  updated_at              DateTime          @updatedAt
+  workspace               Workspace         @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  snapshots               RequirementSnapshot[]
+  packs                   Pack[]
+
+  @@index([workspace_id, created_at])
+  @@index([workspace_id, status])
+}
+
+model RequirementSnapshot {
+  id                      String      @id @default(cuid())
+  workspace_id            String
+  requirement_id          String
+  version                 Int
+  source_text             String
+  source_hash             String
+  created_by_clerk_user_id String
+  created_at              DateTime    @default(now())
+  workspace               Workspace   @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  requirement             Requirement @relation(fields: [requirement_id], references: [id], onDelete: Cascade)
+  packs                   Pack[]
+
+  @@unique([requirement_id, version])
+  @@index([workspace_id, requirement_id])
+  @@index([workspace_id, created_at])
+}
+
+model Pack {
+  id                        String              @id @default(cuid())
+  workspace_id              String
+  requirement_id            String
+  requirement_snapshot_id   String
+  status                    PackStatus          @default(NEEDS_REVIEW)
+  schema_version            String
+  content_json              Json
+  created_by_clerk_user_id  String
+  generated_at              DateTime            @default(now())
+  approved_by_clerk_user_id String?
+  approved_at               DateTime?
+  created_at                DateTime            @default(now())
+  workspace                 Workspace           @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  requirement               Requirement         @relation(fields: [requirement_id], references: [id], onDelete: Cascade)
+  requirement_snapshot      RequirementSnapshot @relation(fields: [requirement_snapshot_id], references: [id], onDelete: Cascade)
+  exports                   Export[]
+
+  @@index([workspace_id, requirement_snapshot_id])
+  @@index([workspace_id, created_at])
+}
+
+model Job {
+  id                            String    @id @default(cuid())
+  workspace_id                  String
+  type                          String
+  status                        JobStatus @default(QUEUED)
+  input_requirement_snapshot_id String?
+  metadata_json                 Json?
+  output_pack_id                String?
+  error                         String?
+  created_by_clerk_user_id      String
+  started_at                    DateTime?
+  finished_at                   DateTime?
+  created_at                    DateTime  @default(now())
+  workspace                     Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+
+  @@index([workspace_id, created_at])
+}
+
+model Export {
+  id                       String       @id @default(cuid())
+  workspace_id             String
+  pack_id                  String
+  kind                     String
+  status                   ExportStatus @default(QUEUED)
+  content_type             String       @default("text/csv")
+  file_name                String
+  content_text             String?      @db.Text
+  error                    String?      @db.Text
+  created_by_clerk_user_id String
+  created_at               DateTime     @default(now())
+  completed_at             DateTime?
+  workspace                Workspace    @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  pack                     Pack         @relation(fields: [pack_id], references: [id], onDelete: Cascade)
+
+  @@index([workspace_id, created_at])
+  @@index([workspace_id, pack_id])
+  @@index([workspace_id, status])
 }

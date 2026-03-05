@@ -9,7 +9,8 @@ export type Permission =
   | "pack:approve"
   | "pack:edit"
   | "requirement:edit"
-  | "export:download";
+  | "export:download"
+  | "audit:view";
 
 type WorkspaceContext = {
   workspace: Workspace;
@@ -33,6 +34,7 @@ const PERMISSIONS: Record<Permission, Role[]> = {
   "pack:edit": [Role.OWNER, Role.ADMIN, Role.EDITOR],
   "requirement:edit": [Role.OWNER, Role.ADMIN, Role.EDITOR],
   "export:download": [Role.OWNER, Role.ADMIN, Role.EDITOR, Role.REVIEWER],
+  "audit:view": [Role.OWNER, Role.ADMIN, Role.REVIEWER],
 };
 
 export function can(role: Role, permission: Permission): boolean {
