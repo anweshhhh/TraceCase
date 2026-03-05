@@ -17,7 +17,7 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
 ## Current Status (Implemented)
 ### App + Auth
 - Next.js App Router bootstrapped with Tailwind + shadcn/ui
-- Clerk integrated with protected routing via Clerk middleware (public routes: `/`, `/sign-in(.*)`, `/sign-up(.*)`; everything else protected)
+- Clerk integrated with protected routing via Clerk middleware (public routes: `/`, `/sign-in(.*)`, `/sign-up(.*)`, `/api/inngest(.*)`; everything else protected)
 - Pages:
   - Public landing: `/`
   - Auth: `/sign-in/[[...sign-in]]`, `/sign-up/[[...sign-up]]`
@@ -51,13 +51,291 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
   - `/dashboard/reviewer-only` allows ONLY REVIEWER (OWNER redirected to /forbidden)
 - Nav shows links based on permissions (Admin link gated; reviewer-only link always visible to test forbidden)
 
+### Requirements (Epic 1 / Task 1.1)
+- Prisma schema extended with:
+  - `Requirement` model (workspace-scoped)
+  - `RequirementStatus` enum (`ACTIVE`, `ARCHIVED`)
+  - `ModuleType` enum (`GENERIC`, `LOGIN`, `SIGNUP`, `PAYMENTS`, `CRUD`, `API`, `ETL`)
+- Requirement migration created and applied to Neon
+- Server modules added:
+  - `server/requirements.ts` for list/create/get/update/status operations
+  - All requirement queries scoped by `workspace_id`
+  - Write operations enforce `requirement:edit` permission
+  - Zod validation applied for payloads and filters
+  - `server/audit.ts` helper to persist audit events
+- Requirement audit actions recorded:
+  - `requirement.created`
+  - `requirement.updated`
+  - `requirement.archived`
+  - `requirement.unarchived`
+- UI routes added under `/dashboard/requirements`:
+  - List page with status filter and permission-aware New button
+  - New page (create form with Zod + React Hook Form + shadcn/ui)
+  - Detail page with read-only vs editable behavior by role
+  - Archive/unarchive toggle for users with edit permission
+- Error/guard behavior:
+  - Unauthorized edits redirect to `/forbidden` (server-side)
+  - Missing requirement id shows friendly not-found state
+
+### Requirement Snapshot Versioning (Epic 1 / Task 1.2)
+- Prisma schema extended with `RequirementSnapshot`:
+  - Immutable snapshot rows with `version`, `source_text`, `source_hash`, actor, and timestamps
+  - Constraints: unique(`requirement_id`, `version`) and workspace-scoped indexes
+- Snapshot migration created and applied to Neon
+- Source text utilities added:
+  - `normalizeSourceText` (newline normalization + trailing-space normalization)
+  - `hashSourceText` (sha256 hex hash)
+  - `buildLineIndex` (1-based line map for traceable display)
+- Automatic snapshotting behavior:
+  - Requirement create generates snapshot `v1`
+  - Requirement update generates new snapshot only when `source_text` changes and hash differs from latest
+  - Status archive/unarchive does not generate snapshots
+- Snapshot audit events recorded:
+  - `requirement.snapshot_created` with `requirement_id`, `version`, and `source_hash`
+- Requirement detail page now includes snapshot viewer:
+  - Snapshot list with version/date/hash/actor
+  - Selectable snapshot read-only text rendering with line numbers
+- Unit tests added for source text normalization/hash and line indexing utilities
+
+### Pack Schema + Deterministic Validation (Epic 2 / Task 2.1)
+- Canonical Pack JSON schema v1.0 added using Zod:
+  - `schema_version`
+  - `source` binding to requirement snapshot metadata
+  - `assumptions`, `clarifying_questions`, `scenarios`, `test_cases`, `checks`
+- Deterministic pack validation utilities added:
+  - Canonicalization of optional checks arrays to `[]`
+  - ID uniqueness checks within arrays
+  - Referential integrity: `test_case.scenario_id` must exist
+  - Sequential step numbering (`step_no` starts at 1 with no gaps)
+  - Source refs constraints (`line_start <= line_end`, both >= 1)
+  - Source refs snapshot binding to `source.requirement_snapshot_id`
+- Example valid pack JSON added at `server/packs/examples/examplePack.json`
+- Unit tests added for:
+  - Valid example pack
+  - Non-sequential step rejection
+  - Missing scenario reference rejection
+
+### Async Pack Generation + Persistence (Epic 2 / Task 2.2)
+- Prisma schema extended with async generation entities:
+  - `Pack` model for persisted generated content (`content_json`, `schema_version`, review status)
+  - `Job` model for async workflow state (`QUEUED`/`RUNNING`/`SUCCEEDED`/`FAILED`)
+  - Enums: `PackStatus`, `JobStatus`
+- Migration created and applied to Neon for `Pack` and `Job` tables.
+- Inngest wired into Next.js App Router:
+  - Inngest client at `src/inngest/client.ts`
+  - Inngest route handler at `app/api/inngest/route.ts`
+  - `generate_pack` function at `src/inngest/functions/generatePack.ts`
+- Placeholder generator implemented (server-only):
+  - `server/packs/generatePlaceholderPack.ts`
+  - Produces schema-valid pack content tied to requirement snapshot source metadata
+  - Validated via `validatePackContent()` and persisted as canonical JSON
+- Requirement detail UX extended:
+  - "Generate Draft Pack" button visible only for users with `pack:edit`
+  - Creates `Job` row, dispatches Inngest event, and shows status feedback
+  - "Generation Jobs" section lists latest 5 jobs with status and pack links
+- Pack viewer route added:
+  - `/dashboard/packs/[packId]` workspace-scoped, read-only JSON view
+- Audit events added around generation lifecycle:
+  - `job.queued`, `job.succeeded`, `job.failed`, `pack.generated`
+- Unit test coverage extended:
+  - Placeholder generator returns schema-valid content.
+
+### Inngest Dispatch Reliability Fix
+- Root cause identified from persisted failed jobs:
+  - `Inngest API Error: 401 Event key not found` when dispatching without local dev mode/event key.
+  - `fetch failed` when local dev mode was enabled but the Inngest dev endpoint was not reachable.
+- Inngest client updated to be explicit for local dev:
+  - Uses `INNGEST_DEV=1` to enable dev mode.
+  - Uses `INNGEST_BASE_URL` when provided.
+  - Falls back to `http://127.0.0.1:8288` in dev mode when base URL is not set.
+- Dispatch failure observability improved:
+  - On dispatch failure, `Job.status` is set to `FAILED` and `Job.error` stores a safe truncated message (max 800 chars).
+  - Audit event `job.dispatch_failed` is recorded with safe metadata (`job_id`, reason).
+  - Requirement detail "Generation Jobs" now renders `Job.error` for failed jobs.
+- Local run expectation documented:
+  - `.env.local`: set `INNGEST_DEV=1` and optional `INNGEST_BASE_URL=http://127.0.0.1:8288`
+  - Terminal 1: `npm run dev`
+  - Terminal 2: `npm run inngest:dev`
+
+### Requirement Job Status Freshness Fix
+- Fixed stale `Generation Jobs` status on requirement detail pages:
+  - Requirement detail route is now forced dynamic (`dynamic = "force-dynamic"`), preventing stale server-component caching for job status.
+  - Existing `revalidatePath("/dashboard/requirements/[id]")` on generation action remains in place before redirect.
+  - Added a tiny client helper that calls `router.refresh()` every 2s while newest job is `QUEUED`/`RUNNING`.
+- Result:
+  - After clicking **Generate Draft Pack**, page shows "Generation started" and updates to `SUCCEEDED` automatically without manual hard refresh.
+
+### Pack Review v1 (Human Edit + Deterministic Validation)
+- Added scoped pack repository module:
+  - `getPack(workspaceId, packId)`
+  - `updatePackContent(workspaceId, actorId, packId, newContentJson)`
+  - All pack queries/updates are scoped by `workspace_id`
+- Save path enforces deterministic validation:
+  - Parses JSON
+  - Validates with `validatePackContent()`
+  - Persists only canonical output to `Pack.content_json`
+  - Updates `schema_version` from canonical payload (`1.0`)
+- Audit logging added for edits:
+  - `pack.edited` with `entity_type="Pack"`, `entity_id=packId`, metadata `{ schema_version }`
+- New review route:
+  - `/dashboard/packs/[packId]/review`
+  - Two-column layout:
+    - Left: requirement snapshot viewer (version/hash + line-numbered source text)
+    - Right: Pack JSON textarea editor with Validate + Save flow
+- Error handling and UX:
+  - Friendly invalid JSON parse errors
+  - Friendly schema/deterministic validation errors (no crash)
+  - `?saved=1` success banner after save
+- RBAC gating:
+  - `pack:edit` users can validate/save
+  - Non-edit users see read-only JSON and no Save button
+- Pack viewer enhancements:
+  - `/dashboard/packs/[packId]` shows `Review / Edit` button for `pack:edit`
+  - Always includes `Back to Requirement` link
+
+### Review Workflow v1 (Approve / Reject + Locking)
+- Added server-side pack status transition helpers:
+  - `approvePack(workspaceId, actorId, packId)`
+  - `rejectPack(workspaceId, actorId, packId, reason?)`
+  - Transitions enforced:
+    - Approve: `NEEDS_REVIEW` or `REJECTED` -> `APPROVED`
+    - Reject: `NEEDS_REVIEW` -> `REJECTED` (from `REJECTED` is no-op)
+    - `APPROVED` is terminal for MVP
+- Added immutable lock enforcement:
+  - `updatePackContent(...)` now blocks writes when `Pack.status === APPROVED`
+  - Friendly error returned to review UI for locked packs
+- Added review actions:
+  - `approvePackAction`
+  - `rejectPackAction`
+  - Permission-gated by `can(role, "pack:approve")`, unauthorized users redirect to `/forbidden`
+  - Revalidates pack viewer/review routes and redirects with `?approved=1`, `?rejected=1`, or `?action_error=...`
+- Review page updated:
+  - Prominent status badge + action buttons (Approve/Reject) when allowed
+  - Approved packs show "Approved (locked)" notice
+  - Save disabled/blocked for approved status
+  - Success/error banners for saved/approved/rejected/action errors
+- Pack viewer updated:
+  - Shows approval metadata when approved:
+    - `approved_by_clerk_user_id`
+    - `approved_at`
+  - Displays locked note for approved packs
+- Audit events added:
+  - `pack.approved`
+  - `pack.rejected`
+- Added unit tests for transition guards:
+  - approved lock guard rejects edits
+  - approve transition produces APPROVED metadata
+
+### CSV Export v1 (Synchronous, Approved-Only)
+- Added CSV mapping utilities in `server/exports/packCsv.ts`:
+  - `buildScenariosCsv`
+  - `buildTestCasesCsv`
+  - `buildApiChecksCsv`
+  - `buildSqlChecksCsv`
+  - `buildEtlChecksCsv`
+- CSV behavior:
+  - Stable column ordering
+  - Proper escaping for commas, quotes, and newlines
+  - Array flattening with ` | `
+  - Compact source refs format: `snapshot_id:line_start-line_end`
+- Added export API route:
+  - `GET /api/packs/[packId]/export?kind=scenarios|test_cases|api_checks|sql_checks|etl_checks`
+  - Enforces Clerk auth, active workspace scoping, and `export:download` RBAC
+  - Rejects non-approved packs with friendly error
+  - Returns direct file download response (`text/csv`)
+- Added export audit logging:
+  - `pack.exported` with metadata `{ kind }`
+- Updated pack viewer (`/dashboard/packs/[packId]`):
+  - New Exports section
+  - Export actions shown only when pack is `APPROVED` and user has export permission
+  - API/SQL/ETL buttons shown only when corresponding checks exist in pack content
+- Added unit tests:
+  - CSV escaping edge cases
+  - Scenarios/Test cases CSV header + row generation
+
+### Async Export v1 (Export Jobs + History)
+- Prisma schema extended with:
+  - `ExportStatus` enum (`QUEUED`, `PROCESSING`, `SUCCEEDED`, `FAILED`)
+  - `Export` model for async export history and temporary CSV payload storage (`content_text`)
+- `Job` model generalized for non-generation jobs:
+  - `input_requirement_snapshot_id` is now nullable
+  - `metadata_json` added for flexible job inputs (used by export jobs for `export_id`/`pack_id`/`kind`)
+- Inngest export workflow added:
+  - Event: `pack/export.requested`
+  - Function: `src/inngest/functions/exportPack.ts`
+  - Flow: QUEUED -> PROCESSING -> SUCCEEDED/FAILED for both `Job` and `Export`
+- Pack viewer now supports async export requests:
+  - "Request ... CSV" actions create `Export` + `Job` rows and dispatch Inngest event
+  - Dispatch failures mark both `Job` and `Export` as `FAILED` with safe truncated errors
+- Export history UI added to `/dashboard/packs/[packId]`:
+  - Shows `created_at`, `kind`, `status`, `file_name`, `completed_at`, and failure snippet
+  - Auto-refreshes while latest export is `QUEUED`/`PROCESSING`
+- Download route added:
+  - `GET /api/exports/[exportId]/download`
+  - Enforces auth + workspace scoping + `export:download`
+  - Allows only `SUCCEEDED` exports with stored `content_text`
+- Audit events added for async exports:
+  - `pack.export_requested`
+  - `pack.export_job_succeeded`
+  - `pack.export_job_failed`
+  - `pack.exported`
+
+### Workspace Audit Log UI (Epic 4 / Task 4.3)
+- Added workspace-scoped audit query helper:
+  - `server/auditRepo.ts` -> `listAuditEvents(workspaceId, filters)`
+  - Supported exact-match filters:
+    - `action`
+    - `entityType`
+    - `entityId`
+    - `actorClerkUserId`
+    - `limit` (default 50, max 200)
+  - Returns safe fields only:
+    - `id`, `created_at`, `actor_clerk_user_id`, `action`, `entity_type`, `entity_id`, `metadata_json`
+- Added RBAC permission:
+  - `audit:view` in authz permission map
+  - Allowed roles: `OWNER`, `ADMIN`, `REVIEWER`
+  - `EDITOR` is blocked from audit page access and redirected to `/forbidden`
+- Added page:
+  - `/dashboard/audit` (server-rendered, dynamic/fresh)
+  - GET filter form + newest-first table view
+  - Metadata displayed as compact truncated JSON preview (safe output)
+  - Empty-state message for no rows
+- Added navigation and convenience links:
+  - App shell nav now shows `Audit Log` for `audit:view` roles
+  - Pack viewer includes `View Pack Audit` deep link:
+    - `/dashboard/audit?entityType=Pack&entityId=<packId>`
+
+### MVP Polish + Hardening Pass (v1)
+- Standardized user-facing feedback across status-driven pages:
+  - Added shared alert components: `SuccessAlert`, `ErrorAlert`, `InfoAlert`
+  - Applied consistent banners on requirement detail, pack viewer, and pack review pages
+- Improved stale-status consistency for status-heavy pages:
+  - Added explicit comments on `dynamic = "force-dynamic"` usage for:
+    - requirement detail jobs
+    - pack viewer export history
+    - pack review state transitions
+- Added safer pending/disabled action states to reduce double submits:
+  - Generate Draft Pack button now shows `Generating...`
+  - Export request buttons now show `Requesting...`
+  - Pack review Approve/Reject now show pending labels (`Approving...`, `Rejecting...`)
+- Nav/discoverability cleanup:
+  - Main nav now focuses on MVP links (`Dashboard`, `Requirements`, `Audit Log`)
+  - Demo-only `Reviewer Only` link removed from main nav (route still exists)
+  - `Admin Area` nav label changed to `RBAC Demo`
+- Error surfacing safety improvements:
+  - Failed generation/export messages remain visible in UI
+  - Error strings are truncated in UI to avoid layout breakage and noisy output
+  - No stack traces are exposed to users
+- Added lightweight dashboard loading fallback:
+  - `app/dashboard/loading.tsx`
+- Added concise end-to-end MVP smoke checklist to README for demos
+
 ## How to Run (Local)
 - Set `.env.local` with Clerk keys + `DATABASE_URL` (Neon Direct URL)
 - Apply migrations: `npm run db:migrate`
 - Dev: `npm run dev`
 - Build: `npm run build`
+- Test: `npm run test`
 
 ## Next Step (Single Focus)
-Epic 1: Requirements intake + traceability
-1) Requirements CRUD (scoped to workspace)
-2) RequirementSnapshot versioning (immutable source snapshots with version increments + hash)
+Phase 3 Regression Intelligence v1 (dedupe + stale flags)
