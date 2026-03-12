@@ -84,3 +84,16 @@
 - Result:
   - Tests: `65 passed`, `0 failed`
   - Build: `passed`
+
+## 2026-03-12 - UX Hardening Pass - Generation Evidence Block
+
+- Scope:
+  - Added a dedicated `Generation evidence` block to the latest requirement-job card.
+  - Surfaced compact proof metrics for critic coverage and OpenAPI grounding without requiring DB inspection.
+  - Added a pure helper and unit coverage so evidence copy stays deterministic.
+- Commands:
+  - `npm test`
+  - `npm run build`
+- Result:
+  - Tests: `66 passed`, `0 failed`
+  - Build: `passed`

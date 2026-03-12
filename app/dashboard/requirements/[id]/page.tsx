@@ -14,6 +14,7 @@ import { RequirementStatusButton } from "@/components/requirements/requirement-s
 import { readArtifactParseSummary } from "@/lib/requirementArtifacts";
 import {
   buildGenerationJobSummary,
+  buildGenerationEvidence,
   buildArtifactGroundingReadiness,
   getGeneratePackJobFailurePresentation,
   readGeneratePackJobMetadata,
@@ -123,6 +124,18 @@ function getJobSummaryToneClasses(tone: "default" | "secondary" | "destructive")
   }
 
   return "border-border bg-muted/20";
+}
+
+function getEvidenceToneClasses(tone: "default" | "secondary" | "destructive") {
+  if (tone === "destructive") {
+    return "border-destructive/25 bg-destructive/5";
+  }
+
+  if (tone === "default") {
+    return "border-primary/20 bg-primary/5";
+  }
+
+  return "border-border bg-muted/30";
 }
 
 function getOpenApiStickyLabel(status: string | null | undefined) {
@@ -511,6 +524,7 @@ export default async function RequirementDetailPage({
                 metadata,
                 error: latestJob.error,
               });
+              const evidence = buildGenerationEvidence(metadata);
 
               return (
                 <div
@@ -567,6 +581,38 @@ export default async function RequirementDetailPage({
                           variant="ghost"
                         />
                       </div>
+                      {evidence ? (
+                        <div className="max-w-[900px] rounded-lg border bg-background/80 p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-medium">Generation evidence</p>
+                            {metadata?.ai_mode === "openai" ? (
+                              <Badge variant="outline">{metadata.ai.model}</Badge>
+                            ) : null}
+                          </div>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                            {evidence.metrics.map((item) => (
+                              <div
+                                className={`rounded-md border px-3 py-2 ${getEvidenceToneClasses(item.tone)}`}
+                                key={item.label}
+                              >
+                                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                  {item.label}
+                                </p>
+                                <p className="mt-1 text-sm font-semibold tracking-tight">
+                                  {item.value}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                          {evidence.notes.length > 0 ? (
+                            <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                              {evidence.notes.map((note) => (
+                                <p key={note}>• {note}</p>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                       {latestJob.status === "FAILED" && latestJob.error ? (
                         <div className="max-w-[760px] rounded-md border border-destructive/25 bg-background/80 p-3 text-xs">
                           <p className="font-medium text-destructive">{failure.description}</p>

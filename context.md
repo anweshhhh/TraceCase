@@ -200,6 +200,16 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
   - older jobs are compressed into lighter history rows
 - Added shared summary-copy helper logic in `lib/packUx.ts` so job-state language remains deterministic and unit tested.
 
+### UX Hardening Pass - Generation Evidence Block
+- Requirement detail latest-job card now includes a dedicated `Generation evidence` block.
+- The evidence block surfaces compact proof from job metadata:
+  - critic coverage
+  - repair attempts
+  - OpenAPI grounding status
+  - grounded API checks
+  - available grounded operations
+- This makes grounded generation quality visible in-product without opening Prisma Studio.
+
 ### Pack Review v1 (Human Edit + Deterministic Validation)
 - Added scoped pack repository module:
   - `getPack(workspaceId, packId)`

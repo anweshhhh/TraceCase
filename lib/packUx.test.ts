@@ -3,6 +3,7 @@ import test from "node:test";
 import examplePack from "@/server/packs/examples/examplePack.json";
 import { validatePackContent } from "@/server/packs/validatePack";
 import {
+  buildGenerationEvidence,
   buildGenerationJobSummary,
   buildArtifactGroundingReadiness,
   buildPackOverview,
@@ -182,6 +183,86 @@ test("buildGenerationJobSummary emphasizes active success and failure states", (
       description:
         "Generated API checks still referenced operations outside the grounded OpenAPI artifact after repair.",
       tone: "destructive",
+    },
+  );
+});
+
+test("buildGenerationEvidence returns compact proof metrics and notes", () => {
+  assert.deepEqual(buildGenerationEvidence(null), null);
+
+  assert.deepEqual(buildGenerationEvidence({ ai_mode: "placeholder" }), {
+    metrics: [
+      {
+        label: "Mode",
+        value: "Placeholder",
+        tone: "secondary",
+      },
+    ],
+    notes: ["Placeholder mode does not include critic or grounding proof."],
+  });
+
+  assert.deepEqual(
+    buildGenerationEvidence({
+      ai_mode: "openai",
+      ai: {
+        provider: "openai",
+        model: "gpt-5-mini",
+        attempts: 2,
+        critic: {
+          verdict: "pass",
+          coverage: {
+            acceptance_criteria_total: 5,
+            acceptance_criteria_covered: 5,
+            uncovered: [],
+          },
+          major_risks: ["Lockout timing can be flaky in distributed environments."],
+          quality_notes: [],
+        },
+        grounding: {
+          openapi: {
+            status: "grounded",
+            artifact_id: "artifact_12345678",
+            operations_available: 3,
+            api_checks_total: 4,
+            api_checks_grounded: 4,
+            mismatches: [],
+          },
+        },
+      },
+    }),
+    {
+      metrics: [
+        {
+          label: "Coverage",
+          value: "5/5",
+          tone: "default",
+        },
+        {
+          label: "Attempts",
+          value: "2",
+          tone: "secondary",
+        },
+        {
+          label: "Grounding",
+          value: "grounded",
+          tone: "default",
+        },
+        {
+          label: "API Checks",
+          value: "4/4",
+          tone: "default",
+        },
+        {
+          label: "Operations",
+          value: "3",
+          tone: "secondary",
+        },
+      ],
+      notes: [
+        "Grounded against OpenAPI artifact artifact.",
+        "One repair loop was used before the final result was stored.",
+        "Top critic risk: Lockout timing can be flaky in distributed environments.",
+      ],
     },
   );
 });

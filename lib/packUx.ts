@@ -77,6 +77,12 @@ export type GenerationJobSummary = {
   tone: "default" | "secondary" | "destructive";
 };
 
+export type GenerationEvidenceMetric = {
+  label: string;
+  value: string;
+  tone: "default" | "secondary" | "destructive";
+};
+
 export type ArtifactReadinessItem = {
   type: RequirementArtifactTypeValue;
   status: "valid" | "invalid" | "missing" | "unknown";
@@ -212,6 +218,98 @@ export function buildGenerationJobSummary(input: {
     title: "Generation updated",
     description: "Latest job state is available below.",
     tone: "secondary",
+  };
+}
+
+export function buildGenerationEvidence(
+  metadata: GeneratePackJobMetadata | null,
+): {
+  metrics: GenerationEvidenceMetric[];
+  notes: string[];
+} | null {
+  if (!metadata) {
+    return null;
+  }
+
+  if (metadata.ai_mode === "placeholder") {
+    return {
+      metrics: [
+        {
+          label: "Mode",
+          value: "Placeholder",
+          tone: "secondary",
+        },
+      ],
+      notes: ["Placeholder mode does not include critic or grounding proof."],
+    };
+  }
+
+  const grounding = metadata.ai.grounding.openapi;
+  const coverage = metadata.ai.critic.coverage;
+  const isCoverageComplete =
+    coverage.acceptance_criteria_total === coverage.acceptance_criteria_covered;
+  const metrics: GenerationEvidenceMetric[] = [
+    {
+      label: "Coverage",
+      value: `${coverage.acceptance_criteria_covered}/${coverage.acceptance_criteria_total}`,
+      tone: isCoverageComplete ? "default" : "destructive",
+    },
+    {
+      label: "Attempts",
+      value: String(metadata.ai.attempts),
+      tone: metadata.ai.attempts > 1 ? "secondary" : "default",
+    },
+    {
+      label: "Grounding",
+      value: grounding.status,
+      tone:
+        grounding.status === "grounded"
+          ? "default"
+          : grounding.status === "skipped"
+            ? "secondary"
+            : "destructive",
+    },
+    {
+      label: "API Checks",
+      value:
+        grounding.status === "skipped"
+          ? String(grounding.api_checks_total)
+          : `${grounding.api_checks_grounded}/${grounding.api_checks_total}`,
+      tone:
+        grounding.status === "grounded" || grounding.status === "skipped"
+          ? "default"
+          : "destructive",
+    },
+    {
+      label: "Operations",
+      value: String(grounding.operations_available),
+      tone: "secondary",
+    },
+  ];
+
+  const notes: string[] = [];
+
+  if (grounding.status === "grounded" && grounding.artifact_id) {
+    notes.push(
+      `Grounded against OpenAPI artifact ${grounding.artifact_id.slice(0, 8)}.`,
+    );
+  } else if (grounding.status === "skipped") {
+    notes.push("No valid OpenAPI artifact was available for this snapshot.");
+  } else if (grounding.status === "failed" || grounding.status === "needs_repair") {
+    notes.push("Grounding mismatches remained after validation.");
+  }
+
+  if (metadata.ai.attempts > 1) {
+    notes.push("One repair loop was used before the final result was stored.");
+  }
+
+  if (metadata.ai.critic.major_risks[0]) {
+    notes.push(`Top critic risk: ${truncateLine(metadata.ai.critic.major_risks[0], 120)}`);
+  }
+
+  return {
+    metrics,
+    notes,
   };
 }
 

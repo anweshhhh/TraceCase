@@ -52,6 +52,12 @@
   - copyable job id
 - Generation jobs now explain themselves without leaving the page:
   - latest run gets a dedicated primary card with the actionable summary
+  - latest run now includes a `Generation evidence` block with:
+    - coverage
+    - attempts
+    - grounding status
+    - grounded API checks
+    - OpenAPI operation count
   - older runs are compressed into lighter history rows
   - failure classification
   - retry button on failed jobs
