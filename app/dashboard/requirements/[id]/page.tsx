@@ -212,9 +212,6 @@ export default async function RequirementDetailPage({
   const newestJob = generationJobs[0];
   const shouldAutoRefreshJobs =
     newestJob?.status === "QUEUED" || newestJob?.status === "RUNNING";
-  const newestJobMetadata = newestJob
-    ? readGeneratePackJobMetadata(newestJob.metadata_json)
-    : null;
   const openApiReadiness =
     artifactReadiness.find((item) => item.type === "OPENAPI") ?? null;
   const prismaReadiness =
@@ -344,42 +341,12 @@ export default async function RequirementDetailPage({
                 </Badge>
               </div>
               <p className="text-sm text-muted-foreground">
-                OpenAI generation can take a few minutes, especially when critic repair or OpenAPI grounding is active. You can stay on this page; status refreshes automatically.
+                This can take a few minutes. The latest run section below updates automatically.
               </p>
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <Badge variant="outline">Queued</Badge>
-                <Badge variant={newestJob.status === "RUNNING" ? "default" : "outline"}>
-                  Generating
-                </Badge>
-                <Badge variant="secondary">Review ready</Badge>
-                {newestJobMetadata?.ai_mode === "openai" ? (
-                  <>
-                    <Badge variant="outline">
-                      Critic: {newestJobMetadata.ai.critic.verdict}
-                    </Badge>
-                    <Badge
-                      variant={
-                        newestJobMetadata.ai.grounding.openapi.status === "grounded"
-                          ? "default"
-                          : "secondary"
-                      }
-                    >
-                      Grounding: {newestJobMetadata.ai.grounding.openapi.status}
-                    </Badge>
-                  </>
-                ) : (
-                  <Badge variant="outline">AI mode: pending details</Badge>
-                )}
-              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <CopyTextButton label="Copy Job ID" value={newestJob.id} variant="outline" />
-              {openApiReadiness ? (
-                <Badge variant={getReadinessBadgeVariant(openApiReadiness.status)}>
-                  {openApiReadiness.note}
-                </Badge>
-              ) : null}
-            </div>
+            <Button asChild size="sm" variant="outline">
+              <Link href="#generation-jobs">Jump to latest run</Link>
+            </Button>
           </div>
           <JobsAutoRefresh enabled={shouldAutoRefreshJobs} />
         </div>
@@ -512,7 +479,10 @@ export default async function RequirementDetailPage({
 
       <RequirementArtifactsSection requirementId={requirement.id} />
 
-      <div className="rounded-lg border bg-background p-6 shadow-sm">
+      <div
+        className="rounded-lg border bg-background p-6 shadow-sm"
+        id="generation-jobs"
+      >
         <h2 className="text-xl font-semibold tracking-tight">Generation Jobs</h2>
         {generationJobs.length > 0 ? (
           <div className="mt-4 space-y-4">
@@ -541,26 +511,6 @@ export default async function RequirementDetailPage({
                         {latestJob.status === "FAILED" ? (
                           <Badge variant="destructive">{failure.label}</Badge>
                         ) : null}
-                        {metadata?.ai_mode === "openai" ? (
-                          <>
-                            <Badge variant="outline">
-                              Critic: {metadata.ai.critic.verdict}
-                            </Badge>
-                            <Badge
-                              variant={
-                                metadata.ai.grounding.openapi.status === "grounded"
-                                  ? "default"
-                                  : metadata.ai.grounding.openapi.status === "skipped"
-                                    ? "secondary"
-                                    : "destructive"
-                              }
-                            >
-                              Grounding: {metadata.ai.grounding.openapi.status}
-                            </Badge>
-                          </>
-                        ) : metadata?.ai_mode === "placeholder" ? (
-                          <Badge variant="outline">Placeholder mode</Badge>
-                        ) : null}
                       </div>
                       <div>
                         <p className="text-lg font-semibold tracking-tight">
@@ -570,74 +520,110 @@ export default async function RequirementDetailPage({
                           {summary.description}
                         </p>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span>{latestJob.created_at.toLocaleString()}</span>
-                        <span>•</span>
-                        <span className="font-mono">{latestJob.id}</span>
-                        <CopyTextButton
-                          label="Copy ID"
-                          size="sm"
-                          value={latestJob.id}
-                          variant="ghost"
-                        />
-                      </div>
-                      {evidence ? (
-                        <details className="max-w-[900px] rounded-md border bg-background/80 px-3 py-2 text-xs">
-                          <summary className="cursor-pointer font-medium text-foreground">
-                            <span className="inline-flex flex-wrap items-center gap-2">
-                              <span>Generation evidence</span>
-                              {metadata?.ai_mode === "openai" ? (
-                                <Badge variant="outline">{metadata.ai.model}</Badge>
-                              ) : null}
-                            </span>
-                          </summary>
-                          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-                            {evidence.metrics.map((item) => (
-                              <div
-                                className={`rounded-md border px-3 py-2 ${getEvidenceToneClasses(item.tone)}`}
-                                key={item.label}
-                              >
-                                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                                  {item.label}
+                      <p className="text-xs text-muted-foreground">
+                        Created {latestJob.created_at.toLocaleString()}
+                      </p>
+                      <details className="max-w-[900px] rounded-md border bg-background/80 px-3 py-2 text-xs">
+                        <summary className="cursor-pointer font-medium text-foreground">
+                          Details
+                        </summary>
+                        <div className="mt-3 space-y-4">
+                          {evidence ? (
+                            <div className="space-y-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-medium text-foreground">
+                                  Generation evidence
                                 </p>
-                                <p className="mt-1 text-sm font-semibold tracking-tight">
-                                  {item.value}
-                                </p>
+                                {metadata?.ai_mode === "openai" ? (
+                                  <Badge variant="outline">{metadata.ai.model}</Badge>
+                                ) : null}
                               </div>
-                            ))}
-                          </div>
-                          {evidence.notes.length > 0 ? (
-                            <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-                              {evidence.notes.map((note) => (
-                                <p key={note}>• {note}</p>
-                              ))}
+                              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                                {evidence.metrics.map((item) => (
+                                  <div
+                                    className={`rounded-md border px-3 py-2 ${getEvidenceToneClasses(item.tone)}`}
+                                    key={item.label}
+                                  >
+                                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                      {item.label}
+                                    </p>
+                                    <p className="mt-1 text-sm font-semibold tracking-tight">
+                                      {item.value}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                              {evidence.notes.length > 0 ? (
+                                <div className="space-y-1 text-xs text-muted-foreground">
+                                  {evidence.notes.map((note) => (
+                                    <p key={note}>• {note}</p>
+                                  ))}
+                                </div>
+                              ) : null}
                             </div>
                           ) : null}
-                        </details>
-                      ) : null}
-                      {latestJob.status === "FAILED" && latestJob.error ? (
-                        <div className="max-w-[760px] rounded-md border border-destructive/25 bg-background/80 p-3 text-xs">
-                          <p className="font-medium text-destructive">{failure.description}</p>
-                          <p className="mt-1 text-destructive/90">
-                            {latestJob.error.slice(0, 320)}
-                          </p>
-                        </div>
-                      ) : null}
-                      {metadata?.ai_mode === "openai" ? (
-                        <details className="max-w-[760px] rounded-md border bg-background/70 px-3 py-2 text-xs">
-                          <summary className="cursor-pointer font-medium text-foreground">
-                            Job details
-                          </summary>
-                          <div className="mt-3 space-y-2 text-muted-foreground">
-                            <p>
-                              Coverage {metadata.ai.critic.coverage.acceptance_criteria_covered}/
-                              {metadata.ai.critic.coverage.acceptance_criteria_total}
-                            </p>
-                            <p>
-                              OpenAPI grounding used {metadata.ai.grounding.openapi.operations_available} operations from artifact{" "}
-                              {metadata.ai.grounding.openapi.artifact_id ?? "n/a"}.
-                            </p>
-                            {metadata.ai.grounding.openapi.mismatches.length > 0 ? (
+                          <dl className="grid gap-3 rounded-md border bg-muted/20 p-3 text-xs sm:grid-cols-2">
+                            <div>
+                              <dt className="text-muted-foreground">Created</dt>
+                              <dd className="font-medium text-foreground">
+                                {latestJob.created_at.toLocaleString()}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">Job ID</dt>
+                              <dd className="mt-1 flex flex-wrap items-center gap-2 font-mono text-foreground">
+                                <span>{latestJob.id}</span>
+                                <CopyTextButton
+                                  label="Copy ID"
+                                  size="sm"
+                                  value={latestJob.id}
+                                  variant="ghost"
+                                />
+                              </dd>
+                            </div>
+                            {metadata?.ai_mode === "openai" ? (
+                              <>
+                                <div>
+                                  <dt className="text-muted-foreground">Critic verdict</dt>
+                                  <dd className="font-medium text-foreground">
+                                    {metadata.ai.critic.verdict}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt className="text-muted-foreground">Grounding</dt>
+                                  <dd className="font-medium text-foreground">
+                                    {metadata.ai.grounding.openapi.status}
+                                  </dd>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <dt className="text-muted-foreground">OpenAPI artifact</dt>
+                                  <dd className="font-mono text-foreground">
+                                    {metadata.ai.grounding.openapi.artifact_id ?? "n/a"}
+                                  </dd>
+                                </div>
+                              </>
+                            ) : null}
+                            {latestJob.output_pack_id ? (
+                              <div className="sm:col-span-2">
+                                <dt className="text-muted-foreground">Pack ID</dt>
+                                <dd className="mt-1 flex flex-wrap items-center gap-2 font-mono text-foreground">
+                                  <span>{latestJob.output_pack_id}</span>
+                                  <CopyTextButton
+                                    label="Copy Pack ID"
+                                    size="sm"
+                                    value={latestJob.output_pack_id}
+                                    variant="ghost"
+                                  />
+                                </dd>
+                              </div>
+                            ) : null}
+                          </dl>
+                          {metadata?.ai_mode === "openai" &&
+                          metadata.ai.grounding.openapi.mismatches.length > 0 ? (
+                            <div className="space-y-2 text-muted-foreground">
+                              <p className="font-medium text-foreground">
+                                Grounding mismatches
+                              </p>
                               <ul className="list-disc space-y-1 pl-5">
                                 {metadata.ai.grounding.openapi.mismatches.map((mismatch) => (
                                   <li key={`${latestJob.id}-${mismatch.check_id}`}>
@@ -645,26 +631,28 @@ export default async function RequirementDetailPage({
                                   </li>
                                 ))}
                               </ul>
-                            ) : null}
-                          </div>
-                        </details>
-                      ) : null}
+                            </div>
+                          ) : null}
+                          {latestJob.status === "FAILED" && latestJob.error ? (
+                            <div className="rounded-md border border-destructive/25 bg-destructive/5 p-3 text-xs">
+                              <p className="font-medium text-destructive">
+                                {failure.description}
+                              </p>
+                              <p className="mt-1 text-destructive/90">
+                                {latestJob.error.slice(0, 320)}
+                              </p>
+                            </div>
+                          ) : null}
+                        </div>
+                      </details>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       {latestJob.output_pack_id ? (
-                        <>
-                          <Button asChild size="sm">
-                            <Link href={`/dashboard/packs/${latestJob.output_pack_id}`}>
-                              Open Pack
-                            </Link>
-                          </Button>
-                          <CopyTextButton
-                            label="Copy Pack ID"
-                            size="sm"
-                            value={latestJob.output_pack_id}
-                            variant="outline"
-                          />
-                        </>
+                        <Button asChild size="sm">
+                          <Link href={`/dashboard/packs/${latestJob.output_pack_id}`}>
+                            Open Pack
+                          </Link>
+                        </Button>
                       ) : null}
                       {canGeneratePack && latestJob.status === "FAILED" ? (
                         <form action={generateDraftPackAction.bind(null, requirement.id)}>

@@ -48,21 +48,19 @@
 - When a generation job is active, a progress banner appears near the top with:
   - current job status
   - auto-refresh note
-  - grounding context note
-  - copyable job id
+  - jump link to the latest run
 - Generation jobs now explain themselves without leaving the page:
   - latest run gets a dedicated primary card with the actionable summary
-  - latest run now includes a collapsible `Generation evidence` bar with expanded proof only:
-    - coverage
-    - attempts
-    - grounding status
-    - grounded API checks
-    - OpenAPI operation count
+  - latest run uses one `Details` disclosure instead of separate evidence/details disclosures
+  - the disclosure contains:
+    - generation evidence metrics
+    - model / critic / grounding facts
+    - ids and copy actions
+    - failure details and grounding mismatches when present
   - older runs are compressed into lighter history rows
   - failure classification
   - retry button on failed jobs
-  - AI/grounding details when metadata is available
-  - copy buttons for job id and output pack id
+  - copy actions moved into details instead of the collapsed summary
 
 ### Pack viewer
 

@@ -221,6 +221,11 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
 - Removed the redundant collapsed evidence summary text from the latest-job card.
 - `Generation evidence` now stays compact until expanded, which avoids repeating proof already visible inside the expanded panel.
 
+### UX Hardening Pass - Latest Run Simplification
+- Simplified the active-generation banner to a lightweight progress message plus jump link.
+- Latest-run UI now uses a single `Details` disclosure instead of separate evidence and job-details disclosures.
+- Copy/debug fields were moved out of the collapsed latest-run summary so the first-glance state stays concise.
+
 ### Pack Review v1 (Human Edit + Deterministic Validation)
 - Added scoped pack repository module:
   - `getPack(workspaceId, packId)`

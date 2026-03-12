@@ -121,3 +121,16 @@
 - Result:
   - Tests: `66 passed`, `0 failed`
   - Build: `passed`
+
+## 2026-03-12 - UX Hardening Pass - Latest Run Simplification
+
+- Scope:
+  - Simplified the in-progress banner so it no longer repeats critic/grounding/debug state.
+  - Merged `Generation evidence` and `Job details` into one `Details` disclosure on the latest-run card.
+  - Moved copy/debug metadata out of the collapsed latest-run summary.
+- Commands:
+  - `npm test`
+  - `npm run build`
+- Result:
+  - Tests: `66 passed`, `0 failed`
+  - Build: `passed`
