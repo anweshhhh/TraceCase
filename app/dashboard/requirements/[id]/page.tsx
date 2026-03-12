@@ -13,6 +13,7 @@ import { RequirementForm } from "@/components/requirements/requirement-form";
 import { RequirementStatusButton } from "@/components/requirements/requirement-status-button";
 import { readArtifactParseSummary } from "@/lib/requirementArtifacts";
 import {
+  buildGenerationJobSummary,
   buildArtifactGroundingReadiness,
   getGeneratePackJobFailurePresentation,
   readGeneratePackJobMetadata,
@@ -112,6 +113,18 @@ function getReadinessBadgeVariant(status: string) {
   return "secondary" as const;
 }
 
+function getJobSummaryToneClasses(tone: "default" | "secondary" | "destructive") {
+  if (tone === "destructive") {
+    return "border-destructive/25 bg-destructive/5";
+  }
+
+  if (tone === "default") {
+    return "border-primary/20 bg-primary/5";
+  }
+
+  return "border-border bg-muted/20";
+}
+
 function getOpenApiStickyLabel(status: string | null | undefined) {
   switch (status) {
     case "valid":
@@ -193,6 +206,8 @@ export default async function RequirementDetailPage({
     artifactReadiness.find((item) => item.type === "OPENAPI") ?? null;
   const prismaReadiness =
     artifactReadiness.find((item) => item.type === "PRISMA_SCHEMA") ?? null;
+  const latestJob = generationJobs[0] ?? null;
+  const historicalJobs = generationJobs.slice(1);
 
   return (
     <section className="space-y-4">
@@ -487,22 +502,29 @@ export default async function RequirementDetailPage({
       <div className="rounded-lg border bg-background p-6 shadow-sm">
         <h2 className="text-xl font-semibold tracking-tight">Generation Jobs</h2>
         {generationJobs.length > 0 ? (
-          <div className="mt-4 space-y-2">
-            {generationJobs.map((job) => {
-              const metadata = readGeneratePackJobMetadata(job.metadata_json);
-              const failure = getGeneratePackJobFailurePresentation(job.error);
+          <div className="mt-4 space-y-4">
+            {latestJob ? (() => {
+              const metadata = readGeneratePackJobMetadata(latestJob.metadata_json);
+              const failure = getGeneratePackJobFailurePresentation(latestJob.error);
+              const summary = buildGenerationJobSummary({
+                status: latestJob.status,
+                metadata,
+                error: latestJob.error,
+              });
 
               return (
                 <div
-                  className="rounded-md border px-3 py-3"
-                  key={job.id}
+                  className={`rounded-lg border p-4 shadow-sm ${getJobSummaryToneClasses(summary.tone)}`}
+                  key={latestJob.id}
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-2">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1 space-y-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium">{job.type}</p>
-                        <Badge variant={getJobBadgeVariant(job.status)}>{job.status}</Badge>
-                        {job.status === "FAILED" ? (
+                        <Badge variant="outline">Latest run</Badge>
+                        <Badge variant={getJobBadgeVariant(latestJob.status)}>
+                          {latestJob.status}
+                        </Badge>
+                        {latestJob.status === "FAILED" ? (
                           <Badge variant="destructive">{failure.label}</Badge>
                         ) : null}
                         {metadata?.ai_mode === "openai" ? (
@@ -526,30 +548,35 @@ export default async function RequirementDetailPage({
                           <Badge variant="outline">Placeholder mode</Badge>
                         ) : null}
                       </div>
+                      <div>
+                        <p className="text-lg font-semibold tracking-tight">
+                          {summary.title}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {summary.description}
+                        </p>
+                      </div>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span>{job.created_at.toLocaleString()}</span>
+                        <span>{latestJob.created_at.toLocaleString()}</span>
                         <span>•</span>
-                        <span className="font-mono">{job.id}</span>
+                        <span className="font-mono">{latestJob.id}</span>
                         <CopyTextButton
                           label="Copy ID"
                           size="sm"
-                          value={job.id}
+                          value={latestJob.id}
                           variant="ghost"
                         />
                       </div>
-                      {metadata?.ai_mode === "openai" ? (
-                        <p className="text-xs text-muted-foreground">
-                          Model {metadata.ai.model} • attempts {metadata.ai.attempts} • grounded API checks {metadata.ai.grounding.openapi.api_checks_grounded}/{metadata.ai.grounding.openapi.api_checks_total}
-                        </p>
-                      ) : null}
-                      {job.status === "FAILED" && job.error ? (
-                        <div className="max-w-[760px] rounded-md border border-destructive/25 bg-destructive/5 p-3 text-xs">
+                      {latestJob.status === "FAILED" && latestJob.error ? (
+                        <div className="max-w-[760px] rounded-md border border-destructive/25 bg-background/80 p-3 text-xs">
                           <p className="font-medium text-destructive">{failure.description}</p>
-                          <p className="mt-1 text-destructive/90">{job.error.slice(0, 320)}</p>
+                          <p className="mt-1 text-destructive/90">
+                            {latestJob.error.slice(0, 320)}
+                          </p>
                         </div>
                       ) : null}
                       {metadata?.ai_mode === "openai" ? (
-                        <details className="max-w-[760px] rounded-md border bg-muted/20 px-3 py-2 text-xs">
+                        <details className="max-w-[760px] rounded-md border bg-background/70 px-3 py-2 text-xs">
                           <summary className="cursor-pointer font-medium text-foreground">
                             Job details
                           </summary>
@@ -565,7 +592,7 @@ export default async function RequirementDetailPage({
                             {metadata.ai.grounding.openapi.mismatches.length > 0 ? (
                               <ul className="list-disc space-y-1 pl-5">
                                 {metadata.ai.grounding.openapi.mismatches.map((mismatch) => (
-                                  <li key={`${job.id}-${mismatch.check_id}`}>
+                                  <li key={`${latestJob.id}-${mismatch.check_id}`}>
                                     {mismatch.check_id}: {mismatch.reason}
                                   </li>
                                 ))}
@@ -576,20 +603,22 @@ export default async function RequirementDetailPage({
                       ) : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      {job.output_pack_id ? (
+                      {latestJob.output_pack_id ? (
                         <>
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={`/dashboard/packs/${job.output_pack_id}`}>Open Pack</Link>
+                          <Button asChild size="sm">
+                            <Link href={`/dashboard/packs/${latestJob.output_pack_id}`}>
+                              Open Pack
+                            </Link>
                           </Button>
                           <CopyTextButton
                             label="Copy Pack ID"
                             size="sm"
-                            value={job.output_pack_id}
+                            value={latestJob.output_pack_id}
                             variant="outline"
                           />
                         </>
                       ) : null}
-                      {canGeneratePack && job.status === "FAILED" ? (
+                      {canGeneratePack && latestJob.status === "FAILED" ? (
                         <form action={generateDraftPackAction.bind(null, requirement.id)}>
                           <PendingSubmitButton
                             idleLabel="Retry Generate"
@@ -603,7 +632,89 @@ export default async function RequirementDetailPage({
                   </div>
                 </div>
               );
-            })}
+            })() : null}
+
+            {historicalJobs.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+                    Recent history
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Most recent first
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {historicalJobs.map((job) => {
+                    const metadata = readGeneratePackJobMetadata(job.metadata_json);
+                    const failure = getGeneratePackJobFailurePresentation(job.error);
+
+                    return (
+                      <div
+                        className="flex flex-wrap items-start justify-between gap-3 rounded-md border px-3 py-3"
+                        key={job.id}
+                      >
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={getJobBadgeVariant(job.status)}>
+                              {job.status}
+                            </Badge>
+                            {job.status === "FAILED" ? (
+                              <Badge variant="destructive">{failure.label}</Badge>
+                            ) : null}
+                            {metadata?.ai_mode === "openai" ? (
+                              <Badge
+                                variant={
+                                  metadata.ai.grounding.openapi.status === "grounded"
+                                    ? "default"
+                                    : metadata.ai.grounding.openapi.status === "skipped"
+                                      ? "secondary"
+                                      : "destructive"
+                                }
+                              >
+                                Grounding: {metadata.ai.grounding.openapi.status}
+                              </Badge>
+                            ) : metadata?.ai_mode === "placeholder" ? (
+                              <Badge variant="outline">Placeholder mode</Badge>
+                            ) : null}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <span>{job.created_at.toLocaleString()}</span>
+                            <span>•</span>
+                            <span className="font-mono">{job.id}</span>
+                            <CopyTextButton
+                              label="Copy ID"
+                              size="sm"
+                              value={job.id}
+                              variant="ghost"
+                            />
+                          </div>
+                          {metadata?.ai_mode === "openai" ? (
+                            <p className="text-xs text-muted-foreground">
+                              {metadata.ai.model} • attempts {metadata.ai.attempts} • API checks {metadata.ai.grounding.openapi.api_checks_grounded}/{metadata.ai.grounding.openapi.api_checks_total}
+                            </p>
+                          ) : null}
+                          {job.status === "FAILED" && job.error ? (
+                            <p className="text-xs text-destructive">
+                              {failure.description}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {job.output_pack_id ? (
+                            <Button asChild size="sm" variant="outline">
+                              <Link href={`/dashboard/packs/${job.output_pack_id}`}>
+                                Open Pack
+                              </Link>
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : (
           <p className="mt-3 text-sm text-muted-foreground">

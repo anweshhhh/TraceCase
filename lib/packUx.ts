@@ -71,6 +71,12 @@ export type JobFailurePresentation = {
   description: string;
 };
 
+export type GenerationJobSummary = {
+  title: string;
+  description: string;
+  tone: "default" | "secondary" | "destructive";
+};
+
 export type ArtifactReadinessItem = {
   type: RequirementArtifactTypeValue;
   status: "valid" | "invalid" | "missing" | "unknown";
@@ -136,6 +142,76 @@ export function getGeneratePackJobFailurePresentation(
   return {
     label: "Generation error",
     description: truncateLine(error ?? "Unknown generation error."),
+  };
+}
+
+export function buildGenerationJobSummary(input: {
+  status: string;
+  metadata: GeneratePackJobMetadata | null;
+  error?: string | null;
+}): GenerationJobSummary {
+  if (input.status === "FAILED") {
+    const failure = getGeneratePackJobFailurePresentation(input.error);
+
+    return {
+      title: failure.label,
+      description: failure.description,
+      tone: "destructive",
+    };
+  }
+
+  if (input.status === "RUNNING") {
+    return {
+      title: "Generation in progress",
+      description:
+        "OpenAI generation can take a few minutes, especially when repair or grounding is active. Keep this page open; status refreshes automatically.",
+      tone: "secondary",
+    };
+  }
+
+  if (input.status === "QUEUED") {
+    return {
+      title: "Waiting for worker",
+      description: "The job has been queued and will start when the worker picks it up.",
+      tone: "secondary",
+    };
+  }
+
+  if (input.status === "SUCCEEDED") {
+    if (input.metadata?.ai_mode === "openai") {
+      const grounding = input.metadata.ai.grounding.openapi;
+      const attemptSuffix = input.metadata.ai.attempts === 1 ? "" : "s";
+      const groundingSummary =
+        grounding.status === "skipped"
+          ? "OpenAPI grounding skipped."
+          : `Grounded API checks ${grounding.api_checks_grounded}/${grounding.api_checks_total}.`;
+
+      return {
+        title: "Draft ready",
+        description: `${input.metadata.ai.model} completed in ${input.metadata.ai.attempts} attempt${attemptSuffix}. Critic ${input.metadata.ai.critic.verdict}; ${groundingSummary}`,
+        tone: "default",
+      };
+    }
+
+    if (input.metadata?.ai_mode === "placeholder") {
+      return {
+        title: "Draft ready",
+        description: "Placeholder generation completed successfully.",
+        tone: "default",
+      };
+    }
+
+    return {
+      title: "Draft ready",
+      description: "Generation completed successfully.",
+      tone: "default",
+    };
+  }
+
+  return {
+    title: "Generation updated",
+    description: "Latest job state is available below.",
+    tone: "secondary",
   };
 }
 

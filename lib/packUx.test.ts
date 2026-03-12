@@ -3,6 +3,7 @@ import test from "node:test";
 import examplePack from "@/server/packs/examples/examplePack.json";
 import { validatePackContent } from "@/server/packs/validatePack";
 import {
+  buildGenerationJobSummary,
   buildArtifactGroundingReadiness,
   buildPackOverview,
   buildPackReviewHighlights,
@@ -113,6 +114,76 @@ test("buildArtifactGroundingReadiness reports valid invalid and missing states",
   const missing = buildArtifactGroundingReadiness([]);
   assert.equal(missing[0]?.status, "missing");
   assert.match(missing[0]?.note ?? "", /grounding will be skipped/i);
+});
+
+test("buildGenerationJobSummary emphasizes active success and failure states", () => {
+  assert.deepEqual(
+    buildGenerationJobSummary({
+      status: "RUNNING",
+      metadata: null,
+    }),
+    {
+      title: "Generation in progress",
+      description:
+        "OpenAI generation can take a few minutes, especially when repair or grounding is active. Keep this page open; status refreshes automatically.",
+      tone: "secondary",
+    },
+  );
+
+  assert.deepEqual(
+    buildGenerationJobSummary({
+      status: "SUCCEEDED",
+      metadata: {
+        ai_mode: "openai",
+        ai: {
+          provider: "openai",
+          model: "gpt-5-mini",
+          attempts: 2,
+          critic: {
+            verdict: "pass",
+            coverage: {
+              acceptance_criteria_total: 2,
+              acceptance_criteria_covered: 2,
+              uncovered: [],
+            },
+            major_risks: [],
+            quality_notes: [],
+          },
+          grounding: {
+            openapi: {
+              status: "grounded",
+              artifact_id: "art_123",
+              operations_available: 3,
+              api_checks_total: 2,
+              api_checks_grounded: 2,
+              mismatches: [],
+            },
+          },
+        },
+      },
+    }),
+    {
+      title: "Draft ready",
+      description:
+        "gpt-5-mini completed in 2 attempts. Critic pass; Grounded API checks 2/2.",
+      tone: "default",
+    },
+  );
+
+  assert.deepEqual(
+    buildGenerationJobSummary({
+      status: "FAILED",
+      metadata: null,
+      error:
+        "AI-generated API checks did not match the grounded OpenAPI artifact after repair.",
+    }),
+    {
+      title: "Grounding mismatch",
+      description:
+        "Generated API checks still referenced operations outside the grounded OpenAPI artifact after repair.",
+      tone: "destructive",
+    },
+  );
 });
 
 test("buildPackOverview and buildPackReviewHighlights summarize canonical packs", () => {

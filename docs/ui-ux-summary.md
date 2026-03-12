@@ -51,6 +51,8 @@
   - grounding context note
   - copyable job id
 - Generation jobs now explain themselves without leaving the page:
+  - latest run gets a dedicated primary card with the actionable summary
+  - older runs are compressed into lighter history rows
   - failure classification
   - retry button on failed jobs
   - AI/grounding details when metadata is available

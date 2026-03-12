@@ -194,6 +194,12 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
 - Detailed OpenAPI and Prisma readiness notes now live in a separate non-sticky `Generation readiness` panel so long pages keep more vertical room.
 - Pack viewer header is no longer sticky; it remains readable but no longer steals viewport height from the raw JSON/content area.
 
+### UX Hardening Pass - Generation Job Hierarchy Refinement
+- Requirement detail generation jobs now distinguish the latest run from older history:
+  - latest run gets a larger summary card with actionable status and details
+  - older jobs are compressed into lighter history rows
+- Added shared summary-copy helper logic in `lib/packUx.ts` so job-state language remains deterministic and unit tested.
+
 ### Pack Review v1 (Human Edit + Deterministic Validation)
 - Added scoped pack repository module:
   - `getPack(workspaceId, packId)`

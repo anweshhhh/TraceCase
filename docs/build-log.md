@@ -70,3 +70,17 @@
 - Result:
   - Tests: `64 passed`, `0 failed`
   - Build: `passed`
+
+## 2026-03-12 - UX Hardening Pass - Job Hierarchy Refinement
+
+- Scope:
+  - Requirement detail generation jobs now separate into:
+    - one emphasized `Latest run` card
+    - lighter `Recent history` rows for older runs
+  - Added a pure helper for stable latest-job summary copy so the UI stays testable.
+- Commands:
+  - `npm test`
+  - `npm run build`
+- Result:
+  - Tests: `65 passed`, `0 failed`
+  - Build: `passed`
