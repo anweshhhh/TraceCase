@@ -191,6 +191,7 @@ test("buildGenerationEvidence returns compact proof metrics and notes", () => {
   assert.deepEqual(buildGenerationEvidence(null), null);
 
   assert.deepEqual(buildGenerationEvidence({ ai_mode: "placeholder" }), {
+    summary: "Placeholder mode",
     metrics: [
       {
         label: "Mode",
@@ -231,6 +232,7 @@ test("buildGenerationEvidence returns compact proof metrics and notes", () => {
       },
     }),
     {
+      summary: "Coverage 5/5 • Grounding grounded • 4/4 API checks",
       metrics: [
         {
           label: "Coverage",

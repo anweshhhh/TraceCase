@@ -97,3 +97,15 @@
 - Result:
   - Tests: `66 passed`, `0 failed`
   - Build: `passed`
+
+## 2026-03-12 - UX Hardening Pass - Evidence Collapse Refinement
+
+- Scope:
+  - Changed `Generation evidence` from an always-open block to a collapsible bar matching `Job details`.
+  - Added a compact summary string so critic/grounding proof is still visible when collapsed.
+- Commands:
+  - `npm test`
+  - `npm run build`
+- Result:
+  - Tests: `66 passed`, `0 failed`
+  - Build: `passed`

@@ -210,6 +210,13 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
   - available grounded operations
 - This makes grounded generation quality visible in-product without opening Prisma Studio.
 
+### UX Hardening Pass - Evidence Collapse Refinement
+- `Generation evidence` on the latest-job card now uses the same expandable pattern as `Job details`.
+- The collapsed summary line keeps key proof visible:
+  - coverage
+  - grounding status
+  - API check grounding count
+
 ### Pack Review v1 (Human Edit + Deterministic Validation)
 - Added scoped pack repository module:
   - `getPack(workspaceId, packId)`

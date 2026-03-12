@@ -582,13 +582,16 @@ export default async function RequirementDetailPage({
                         />
                       </div>
                       {evidence ? (
-                        <div className="max-w-[900px] rounded-lg border bg-background/80 p-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-sm font-medium">Generation evidence</p>
-                            {metadata?.ai_mode === "openai" ? (
-                              <Badge variant="outline">{metadata.ai.model}</Badge>
-                            ) : null}
-                          </div>
+                        <details className="max-w-[900px] rounded-md border bg-background/80 px-3 py-2 text-xs">
+                          <summary className="cursor-pointer font-medium text-foreground">
+                            <span className="inline-flex flex-wrap items-center gap-2">
+                              <span>Generation evidence</span>
+                              <span className="text-muted-foreground">{evidence.summary}</span>
+                              {metadata?.ai_mode === "openai" ? (
+                                <Badge variant="outline">{metadata.ai.model}</Badge>
+                              ) : null}
+                            </span>
+                          </summary>
                           <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
                             {evidence.metrics.map((item) => (
                               <div
@@ -611,7 +614,7 @@ export default async function RequirementDetailPage({
                               ))}
                             </div>
                           ) : null}
-                        </div>
+                        </details>
                       ) : null}
                       {latestJob.status === "FAILED" && latestJob.error ? (
                         <div className="max-w-[760px] rounded-md border border-destructive/25 bg-background/80 p-3 text-xs">
