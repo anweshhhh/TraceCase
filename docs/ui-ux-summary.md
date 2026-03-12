@@ -35,10 +35,16 @@
 
 ### Requirement detail page
 
-- The top action area is sticky so `Generate Draft Pack` and status controls stay reachable.
-- Latest-snapshot grounding readiness is surfaced before generation:
+- The top action area is sticky, but now stays compact and decision-focused:
+  - requirement title
+  - status
+  - one `API grounding` readiness signal
+  - latest snapshot badge
+  - primary `Generate Draft Pack` action
+- Detailed readiness moved out of the sticky area into a separate `Generation readiness` panel:
   - `OpenAPI: valid/invalid/missing`
   - `Prisma: valid/invalid/missing`
+  - non-blocking notes explaining what actually gates generation today
 - When a generation job is active, a progress banner appears near the top with:
   - current job status
   - auto-refresh note
@@ -52,7 +58,7 @@
 
 ### Pack viewer
 
-- Header is sticky so navigation and status stay visible.
+- Header is no longer sticky. This page is read-heavy, so the summary stays visible without reducing the JSON viewport.
 - Pack id, snapshot id, and source hash can be copied directly.
 - Generation metadata is summarized inline:
   - mode

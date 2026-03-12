@@ -184,6 +184,16 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
 - Result:
   - After clicking **Generate Draft Pack**, page shows "Generation started" and updates to `SUCCEEDED` automatically without manual hard refresh.
 
+### UX Hardening Pass - Sticky Header Refinement
+- Requirement detail page sticky chrome was reduced to the decision-critical layer only:
+  - requirement title
+  - requirement status
+  - single OpenAPI/API grounding readiness signal
+  - latest snapshot badge
+  - primary generate action
+- Detailed OpenAPI and Prisma readiness notes now live in a separate non-sticky `Generation readiness` panel so long pages keep more vertical room.
+- Pack viewer header is no longer sticky; it remains readable but no longer steals viewport height from the raw JSON/content area.
+
 ### Pack Review v1 (Human Edit + Deterministic Validation)
 - Added scoped pack repository module:
   - `getPack(workspaceId, packId)`

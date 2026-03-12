@@ -112,6 +112,19 @@ function getReadinessBadgeVariant(status: string) {
   return "secondary" as const;
 }
 
+function getOpenApiStickyLabel(status: string | null | undefined) {
+  switch (status) {
+    case "valid":
+      return "API grounding ready";
+    case "invalid":
+      return "API grounding invalid";
+    case "missing":
+      return "API grounding missing";
+    default:
+      return "API grounding unknown";
+  }
+}
+
 export default async function RequirementDetailPage({
   params,
   searchParams,
@@ -178,12 +191,14 @@ export default async function RequirementDetailPage({
     : null;
   const openApiReadiness =
     artifactReadiness.find((item) => item.type === "OPENAPI") ?? null;
+  const prismaReadiness =
+    artifactReadiness.find((item) => item.type === "PRISMA_SCHEMA") ?? null;
 
   return (
     <section className="space-y-4">
-      <div className="sticky top-4 z-20 rounded-lg border bg-background/95 p-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
+      <div className="sticky top-4 z-20 rounded-lg border bg-background/95 p-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0 space-y-2">
             <h1 className="text-2xl font-semibold tracking-tight">
               {requirement.title}
             </h1>
@@ -192,24 +207,32 @@ export default async function RequirementDetailPage({
               <Badge variant={requirement.status === "ACTIVE" ? "default" : "secondary"}>
                 {requirement.status}
               </Badge>
-              {artifactReadiness.map((item) => (
-                <Badge key={item.type} variant={getReadinessBadgeVariant(item.status)}>
-                  {item.label}: {item.status}
+              {openApiReadiness ? (
+                <Badge variant={getReadinessBadgeVariant(openApiReadiness.status)}>
+                  {getOpenApiStickyLabel(openApiReadiness.status)}
                 </Badge>
-              ))}
+              ) : null}
+              {latestSnapshot ? (
+                <Badge variant="secondary">Snapshot v{latestSnapshot.version}</Badge>
+              ) : null}
+              {shouldAutoRefreshJobs ? (
+                <Badge variant="secondary">Generation in progress</Badge>
+              ) : null}
             </div>
-            <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-              {artifactReadiness.map((item) => (
-                <p key={`${item.type}-note`} className="rounded-md border bg-muted/20 px-3 py-2">
-                  <span className="font-medium text-foreground">{item.label}</span>: {item.note}
-                </p>
-              ))}
-            </div>
+            <p className="text-sm text-muted-foreground">
+              Generate against the latest snapshot. Detailed artifact readiness lives below.
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button asChild variant="outline">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <Button asChild variant="ghost" size="sm">
               <Link href="/dashboard/requirements">Back to Requirements</Link>
             </Button>
+            {canEdit ? (
+              <RequirementStatusButton
+                currentStatus={requirement.status}
+                requirementId={requirement.id}
+              />
+            ) : null}
             {canGeneratePack ? (
               <form action={generateDraftPackAction.bind(null, requirement.id)}>
                 <PendingSubmitButton
@@ -218,14 +241,60 @@ export default async function RequirementDetailPage({
                 />
               </form>
             ) : null}
-            {canEdit ? (
-              <RequirementStatusButton
-                currentStatus={requirement.status}
-                requirementId={requirement.id}
-              />
-            ) : null}
           </div>
         </div>
+      </div>
+
+      <div className="rounded-lg border bg-background p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Generation readiness</h2>
+            <p className="text-sm text-muted-foreground">
+              Latest snapshot inputs used during draft generation.
+            </p>
+          </div>
+          {latestSnapshot ? (
+            <Badge variant="outline">Using snapshot v{latestSnapshot.version}</Badge>
+          ) : null}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {openApiReadiness ? (
+            <div className="rounded-lg border bg-muted/10 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{openApiReadiness.label}</Badge>
+                <Badge variant={getReadinessBadgeVariant(openApiReadiness.status)}>
+                  {openApiReadiness.status}
+                </Badge>
+              </div>
+              <p className="mt-3 text-sm text-muted-foreground">
+                {openApiReadiness.note}
+              </p>
+            </div>
+          ) : null}
+          {prismaReadiness ? (
+            <div className="rounded-lg border bg-muted/10 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{prismaReadiness.label}</Badge>
+                <Badge variant={getReadinessBadgeVariant(prismaReadiness.status)}>
+                  {prismaReadiness.status}
+                </Badge>
+              </div>
+              <p className="mt-3 text-sm text-muted-foreground">
+                {prismaReadiness.note}
+              </p>
+            </div>
+          ) : null}
+        </div>
+        {!openApiReadiness || openApiReadiness.status !== "valid" ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            API checks will still generate, but OpenAPI grounding will be skipped unless the latest snapshot has a valid OpenAPI artifact.
+          </p>
+        ) : null}
+        {prismaReadiness?.status === "valid" ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            Prisma artifacts are parsed and ready for the next grounding phase, but they do not gate generation yet.
+          </p>
+        ) : null}
       </div>
 
       {generationMessage && generationMessage.tone === "info" ? (

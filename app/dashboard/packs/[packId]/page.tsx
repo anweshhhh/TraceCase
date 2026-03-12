@@ -217,7 +217,7 @@ export default async function PackViewerPage({
 
   return (
     <section className="space-y-4">
-      <div className="sticky top-4 z-20 rounded-lg border bg-background/95 p-6 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
+      <div className="rounded-lg border bg-background p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Pack Viewer</h1>

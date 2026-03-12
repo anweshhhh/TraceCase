@@ -52,3 +52,21 @@
 - Result:
   - Tests: `64 passed`, `0 failed`
   - Build: `passed`
+
+## 2026-03-12 - UX Hardening Pass - Sticky Header Refinement
+
+- Scope:
+  - Shrunk the requirement sticky header so it only carries decision-critical state:
+    - title
+    - status
+    - API grounding readiness
+    - latest snapshot badge
+    - primary generation action
+  - Moved OpenAPI and Prisma readiness details into a non-sticky `Generation readiness` panel.
+  - Removed sticky chrome from the pack viewer header to give the JSON/content area more room.
+- Commands:
+  - `npm test`
+  - `npm run build`
+- Result:
+  - Tests: `64 passed`, `0 failed`
+  - Build: `passed`
