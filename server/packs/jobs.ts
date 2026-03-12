@@ -46,3 +46,19 @@ export async function getPackById(workspaceId: string, packId: string) {
     },
   });
 }
+
+export async function getLatestGeneratePackJobForPack(
+  workspaceId: string,
+  packId: string,
+) {
+  return db.job.findFirst({
+    where: {
+      workspace_id: workspaceId,
+      type: GENERATE_PACK_JOB_TYPE,
+      output_pack_id: packId,
+    },
+    orderBy: {
+      created_at: "desc",
+    },
+  });
+}

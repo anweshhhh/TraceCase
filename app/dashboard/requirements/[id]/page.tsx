@@ -1,17 +1,28 @@
 import Link from "next/link";
+import { LoaderCircle } from "lucide-react";
 import { Role } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CopyTextButton } from "@/components/ui/copy-text-button";
 import { ErrorAlert, InfoAlert } from "@/components/ui/inline-alert";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
+import { ExpandablePreview } from "@/components/ui/expandable-preview";
 import { JobsAutoRefresh } from "@/components/requirements/jobs-auto-refresh";
+import { RequirementArtifactsSection } from "@/components/requirements/requirement-artifacts-section";
 import { RequirementForm } from "@/components/requirements/requirement-form";
 import { RequirementStatusButton } from "@/components/requirements/requirement-status-button";
+import { readArtifactParseSummary } from "@/lib/requirementArtifacts";
+import {
+  buildArtifactGroundingReadiness,
+  getGeneratePackJobFailurePresentation,
+  readGeneratePackJobMetadata,
+} from "@/lib/packUx";
 import { buildLineIndex } from "@/lib/sourceText";
 import { TEST_FOCUS_OPTIONS } from "@/lib/validators/requirements";
 import { can, requireRoleMin } from "@/server/authz";
 import { generateDraftPackAction } from "@/server/pack-actions";
 import { listRecentGeneratePackJobsForRequirement } from "@/server/packs/jobs";
+import { listRequirementArtifacts } from "@/server/requirementArtifacts";
 import { getRequirement, listRequirementSnapshots } from "@/server/requirements";
 
 // Dynamic to avoid stale status rendering while background jobs are updating.
@@ -24,33 +35,53 @@ type RequirementDetailPageProps = {
   searchParams: Promise<{
     snapshot?: string;
     job?: string;
+    retry?: string;
+    request_id?: string;
   }>;
 };
 
-function getGenerationMessage(status?: string): {
+function getGenerationMessage(
+  status?: string,
+  retryAfterSeconds?: number,
+  requestId?: string,
+): {
   tone: "info" | "error";
   text: string;
 } | null {
+  const requestSuffix = requestId ? ` (request_id: ${requestId})` : "";
+
   switch (status) {
     case "queued":
       return {
         tone: "info",
         text: "Generation started. Draft pack job has been queued.",
       };
+    case "deduped":
+      return {
+        tone: "info",
+        text: `A generation job is already in progress for this requirement.${requestSuffix}`,
+      };
+    case "rate-limited":
+      return {
+        tone: "error",
+        text: `Too many generation requests. Retry in ${
+          retryAfterSeconds ?? 1
+        }s.${requestSuffix}`,
+      };
     case "dispatch-failed":
       return {
         tone: "error",
-        text: "Failed to dispatch generation job. Check the latest FAILED job message below.",
+        text: `Failed to dispatch generation job. Check the latest FAILED job message below.${requestSuffix}`,
       };
     case "snapshot-missing":
       return {
         tone: "error",
-        text: "No snapshot found for this requirement. Save source text first.",
+        text: `No snapshot found for this requirement. Save source text first.${requestSuffix}`,
       };
     case "requirement-missing":
       return {
         tone: "error",
-        text: "Requirement is unavailable in the active workspace.",
+        text: `Requirement is unavailable in the active workspace.${requestSuffix}`,
       };
     default:
       return null;
@@ -63,6 +94,18 @@ function getJobBadgeVariant(status: string) {
   }
 
   if (status === "FAILED") {
+    return "destructive" as const;
+  }
+
+  return "secondary" as const;
+}
+
+function getReadinessBadgeVariant(status: string) {
+  if (status === "valid") {
+    return "default" as const;
+  }
+
+  if (status === "invalid") {
     return "destructive" as const;
   }
 
@@ -97,11 +140,13 @@ export default async function RequirementDetailPage({
   }
 
   const snapshots = await listRequirementSnapshots(workspace.id, requirement.id);
+  const latestSnapshot = snapshots[0] ?? null;
   const selectedVersion = Number.parseInt(resolvedSearchParams.snapshot ?? "", 10);
   const selectedSnapshot =
     snapshots.find((snapshot) => snapshot.version === selectedVersion) ??
     snapshots[0] ??
     null;
+  const currentSourceLineCount = requirement.source_text.split(/\r\n|\n/).length;
   const lineIndex = selectedSnapshot
     ? buildLineIndex(selectedSnapshot.source_text)
     : [];
@@ -110,14 +155,33 @@ export default async function RequirementDetailPage({
     requirement.id,
     5,
   );
-  const generationMessage = getGenerationMessage(resolvedSearchParams.job);
+  const latestSnapshotArtifacts = latestSnapshot
+    ? await listRequirementArtifacts(workspace.id, latestSnapshot.id)
+    : [];
+  const artifactReadiness = buildArtifactGroundingReadiness(
+    latestSnapshotArtifacts.map((artifact) => ({
+      type: artifact.type,
+      parse_summary: readArtifactParseSummary(artifact.metadata_json),
+    })),
+  );
+  const retryAfterSeconds = Number.parseInt(resolvedSearchParams.retry ?? "", 10);
+  const generationMessage = getGenerationMessage(
+    resolvedSearchParams.job,
+    Number.isNaN(retryAfterSeconds) ? undefined : retryAfterSeconds,
+    resolvedSearchParams.request_id,
+  );
   const newestJob = generationJobs[0];
   const shouldAutoRefreshJobs =
     newestJob?.status === "QUEUED" || newestJob?.status === "RUNNING";
+  const newestJobMetadata = newestJob
+    ? readGeneratePackJobMetadata(newestJob.metadata_json)
+    : null;
+  const openApiReadiness =
+    artifactReadiness.find((item) => item.type === "OPENAPI") ?? null;
 
   return (
     <section className="space-y-4">
-      <div className="rounded-lg border bg-background p-4 shadow-sm">
+      <div className="sticky top-4 z-20 rounded-lg border bg-background/95 p-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
@@ -128,6 +192,18 @@ export default async function RequirementDetailPage({
               <Badge variant={requirement.status === "ACTIVE" ? "default" : "secondary"}>
                 {requirement.status}
               </Badge>
+              {artifactReadiness.map((item) => (
+                <Badge key={item.type} variant={getReadinessBadgeVariant(item.status)}>
+                  {item.label}: {item.status}
+                </Badge>
+              ))}
+            </div>
+            <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+              {artifactReadiness.map((item) => (
+                <p key={`${item.type}-note`} className="rounded-md border bg-muted/20 px-3 py-2">
+                  <span className="font-medium text-foreground">{item.label}</span>: {item.note}
+                </p>
+              ))}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -157,6 +233,59 @@ export default async function RequirementDetailPage({
       ) : null}
       {generationMessage && generationMessage.tone === "error" ? (
         <ErrorAlert>{generationMessage.text}</ErrorAlert>
+      ) : null}
+
+      {newestJob && shouldAutoRefreshJobs ? (
+        <div className="rounded-lg border border-primary/25 bg-primary/5 p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <LoaderCircle className="size-4 animate-spin text-primary" />
+                <p className="font-medium">Draft generation in progress</p>
+                <Badge variant={getJobBadgeVariant(newestJob.status)}>
+                  {newestJob.status}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                OpenAI generation can take a few minutes, especially when critic repair or OpenAPI grounding is active. You can stay on this page; status refreshes automatically.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <Badge variant="outline">Queued</Badge>
+                <Badge variant={newestJob.status === "RUNNING" ? "default" : "outline"}>
+                  Generating
+                </Badge>
+                <Badge variant="secondary">Review ready</Badge>
+                {newestJobMetadata?.ai_mode === "openai" ? (
+                  <>
+                    <Badge variant="outline">
+                      Critic: {newestJobMetadata.ai.critic.verdict}
+                    </Badge>
+                    <Badge
+                      variant={
+                        newestJobMetadata.ai.grounding.openapi.status === "grounded"
+                          ? "default"
+                          : "secondary"
+                      }
+                    >
+                      Grounding: {newestJobMetadata.ai.grounding.openapi.status}
+                    </Badge>
+                  </>
+                ) : (
+                  <Badge variant="outline">AI mode: pending details</Badge>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <CopyTextButton label="Copy Job ID" value={newestJob.id} variant="outline" />
+              {openApiReadiness ? (
+                <Badge variant={getReadinessBadgeVariant(openApiReadiness.status)}>
+                  {openApiReadiness.note}
+                </Badge>
+              ) : null}
+            </div>
+          </div>
+          <JobsAutoRefresh enabled={shouldAutoRefreshJobs} />
+        </div>
       ) : null}
 
       <div className="rounded-lg border bg-background p-6 shadow-sm">
@@ -198,9 +327,17 @@ export default async function RequirementDetailPage({
               </div>
               <div className="sm:col-span-2">
                 <p className="text-muted-foreground">Source Text</p>
-                <pre className="mt-1 whitespace-pre-wrap rounded-md border bg-background p-3 font-sans text-sm">
-                  {requirement.source_text}
-                </pre>
+                <div className="mt-1">
+                  <ExpandablePreview
+                    contentClassName="font-sans text-sm"
+                    expandLabel="Show full source"
+                    collapseLabel="Collapse source"
+                    summary={`${currentSourceLineCount} lines | current requirement source`}
+                    storageKey={`tracecase.requirement.current-source.${requirement.id}`}
+                  >
+                    <pre className="whitespace-pre-wrap">{requirement.source_text}</pre>
+                  </ExpandablePreview>
+                </div>
               </div>
             </div>
           </div>
@@ -245,7 +382,14 @@ export default async function RequirementDetailPage({
                     {selectedSnapshot.source_hash.slice(0, 12)}...
                   </Badge>
                 </div>
-                <div className="overflow-x-auto rounded-md border bg-muted/10 p-3">
+                <ExpandablePreview
+                  collapsedHeightClassName="max-h-[18rem]"
+                  contentClassName="overflow-x-auto"
+                  expandLabel="Show full snapshot"
+                  collapseLabel="Collapse snapshot"
+                  summary={`${lineIndex.length} lines | snapshot v${selectedSnapshot.version}`}
+                  storageKey={`tracecase.requirement.snapshot.${requirement.id}.${selectedSnapshot.id}`}
+                >
                   <div className="min-w-[520px] space-y-1 font-mono text-sm">
                     {lineIndex.map((line) => (
                       <div className="grid grid-cols-[48px_1fr] gap-3" key={line.lineNo}>
@@ -258,7 +402,7 @@ export default async function RequirementDetailPage({
                       </div>
                     ))}
                   </div>
-                </div>
+                </ExpandablePreview>
               </div>
             ) : null}
           </div>
@@ -269,41 +413,132 @@ export default async function RequirementDetailPage({
         )}
       </div>
 
+      <RequirementArtifactsSection requirementId={requirement.id} />
+
       <div className="rounded-lg border bg-background p-6 shadow-sm">
         <h2 className="text-xl font-semibold tracking-tight">Generation Jobs</h2>
-        <JobsAutoRefresh enabled={shouldAutoRefreshJobs} />
         {generationJobs.length > 0 ? (
           <div className="mt-4 space-y-2">
-            {generationJobs.map((job) => (
-              <div
-                className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2"
-                key={job.id}
-              >
-                <div>
-                  <p className="font-medium">{job.type}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {job.created_at.toLocaleString()}
-                  </p>
-                  {job.status === "FAILED" && job.error ? (
-                    <p className="mt-1 max-w-[560px] text-xs text-destructive">
-                      {job.error.slice(0, 260)}
-                    </p>
-                  ) : null}
+            {generationJobs.map((job) => {
+              const metadata = readGeneratePackJobMetadata(job.metadata_json);
+              const failure = getGeneratePackJobFailurePresentation(job.error);
+
+              return (
+                <div
+                  className="rounded-md border px-3 py-3"
+                  key={job.id}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{job.type}</p>
+                        <Badge variant={getJobBadgeVariant(job.status)}>{job.status}</Badge>
+                        {job.status === "FAILED" ? (
+                          <Badge variant="destructive">{failure.label}</Badge>
+                        ) : null}
+                        {metadata?.ai_mode === "openai" ? (
+                          <>
+                            <Badge variant="outline">
+                              Critic: {metadata.ai.critic.verdict}
+                            </Badge>
+                            <Badge
+                              variant={
+                                metadata.ai.grounding.openapi.status === "grounded"
+                                  ? "default"
+                                  : metadata.ai.grounding.openapi.status === "skipped"
+                                    ? "secondary"
+                                    : "destructive"
+                              }
+                            >
+                              Grounding: {metadata.ai.grounding.openapi.status}
+                            </Badge>
+                          </>
+                        ) : metadata?.ai_mode === "placeholder" ? (
+                          <Badge variant="outline">Placeholder mode</Badge>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>{job.created_at.toLocaleString()}</span>
+                        <span>•</span>
+                        <span className="font-mono">{job.id}</span>
+                        <CopyTextButton
+                          label="Copy ID"
+                          size="sm"
+                          value={job.id}
+                          variant="ghost"
+                        />
+                      </div>
+                      {metadata?.ai_mode === "openai" ? (
+                        <p className="text-xs text-muted-foreground">
+                          Model {metadata.ai.model} • attempts {metadata.ai.attempts} • grounded API checks {metadata.ai.grounding.openapi.api_checks_grounded}/{metadata.ai.grounding.openapi.api_checks_total}
+                        </p>
+                      ) : null}
+                      {job.status === "FAILED" && job.error ? (
+                        <div className="max-w-[760px] rounded-md border border-destructive/25 bg-destructive/5 p-3 text-xs">
+                          <p className="font-medium text-destructive">{failure.description}</p>
+                          <p className="mt-1 text-destructive/90">{job.error.slice(0, 320)}</p>
+                        </div>
+                      ) : null}
+                      {metadata?.ai_mode === "openai" ? (
+                        <details className="max-w-[760px] rounded-md border bg-muted/20 px-3 py-2 text-xs">
+                          <summary className="cursor-pointer font-medium text-foreground">
+                            Job details
+                          </summary>
+                          <div className="mt-3 space-y-2 text-muted-foreground">
+                            <p>
+                              Coverage {metadata.ai.critic.coverage.acceptance_criteria_covered}/
+                              {metadata.ai.critic.coverage.acceptance_criteria_total}
+                            </p>
+                            <p>
+                              OpenAPI grounding used {metadata.ai.grounding.openapi.operations_available} operations from artifact{" "}
+                              {metadata.ai.grounding.openapi.artifact_id ?? "n/a"}.
+                            </p>
+                            {metadata.ai.grounding.openapi.mismatches.length > 0 ? (
+                              <ul className="list-disc space-y-1 pl-5">
+                                {metadata.ai.grounding.openapi.mismatches.map((mismatch) => (
+                                  <li key={`${job.id}-${mismatch.check_id}`}>
+                                    {mismatch.check_id}: {mismatch.reason}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </div>
+                        </details>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {job.output_pack_id ? (
+                        <>
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={`/dashboard/packs/${job.output_pack_id}`}>Open Pack</Link>
+                          </Button>
+                          <CopyTextButton
+                            label="Copy Pack ID"
+                            size="sm"
+                            value={job.output_pack_id}
+                            variant="outline"
+                          />
+                        </>
+                      ) : null}
+                      {canGeneratePack && job.status === "FAILED" ? (
+                        <form action={generateDraftPackAction.bind(null, requirement.id)}>
+                          <PendingSubmitButton
+                            idleLabel="Retry Generate"
+                            pendingLabel="Retrying..."
+                            size="sm"
+                            variant="outline"
+                          />
+                        </form>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={getJobBadgeVariant(job.status)}>{job.status}</Badge>
-                  {job.output_pack_id ? (
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/dashboard/packs/${job.output_pack_id}`}>Open Pack</Link>
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p className="mt-3 text-sm text-muted-foreground">
-            No generation jobs yet for this requirement.
+            No generation jobs yet for this requirement. Use Generate Draft Pack to create the first draft, and keep this page open to watch live status updates.
           </p>
         )}
       </div>

@@ -140,6 +140,25 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
 - Unit test coverage extended:
   - Placeholder generator returns schema-valid content.
 
+### Phase 1 / Workstream #1: Real AI Pack Generation
+- Added OpenAI-backed server-only generation path gated by `AI_PROVIDER=openai`:
+  - `server/ai/openaiClient.ts`
+  - `server/packs/generateAiPack.ts`
+  - `server/packs/critiquePack.ts`
+- Pack generation now uses Responses API structured outputs locked to Pack JSON Schema v1.0 and still persists only canonical output from `validatePackContent()`.
+- Added critic + one-shot auto-repair loop:
+  - critic checks requirement coverage and genericity
+  - uncovered acceptance criteria or generic coverage trigger a single repair attempt
+  - hard cap stays at 2 total generations (initial + 1 repair)
+- Final critic summary is stored on the generation job in `Job.metadata_json`:
+  - `ai_mode`
+  - `ai.provider`
+  - `ai.model`
+  - `ai.attempts`
+  - `ai.critic`
+  - `ai.token_usage` when available
+- Placeholder mode remains the default for local/dev parity and still uses the existing deterministic placeholder generator.
+
 ### Inngest Dispatch Reliability Fix
 - Root cause identified from persisted failed jobs:
   - `Inngest API Error: 401 Event key not found` when dispatching without local dev mode/event key.
@@ -330,6 +349,173 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
   - `app/dashboard/loading.tsx`
 - Added concise end-to-end MVP smoke checklist to README for demos
 
+### Phase 0 / Workstream 1 (Health + Env Validation + CI)
+- Added strict environment validation with Zod:
+  - `server/env.ts` as single source of truth for required server env vars
+  - `getServerEnv()` validates once and caches
+  - Friendly `EnvValidationError` lists missing/invalid variable names without exposing secrets
+- Added local env verification command:
+  - `npm run check-env` (`scripts/check-env.ts`)
+- Added public health endpoint:
+  - `GET /api/health` at `app/api/health/route.ts`
+  - Includes safe checks for `db`, `env`, `inngest`, and `clerk`
+  - Returns:
+    - `200` + `status: "ok"` when essential checks pass
+    - `503` + `status: "degraded"` when env/db checks fail
+  - Includes `timestamp`, `version`, and `commit_sha` metadata
+- Updated Clerk middleware public routes:
+  - Added `/api/health(.*)` to public route matcher
+- Added CI workflow:
+  - `.github/workflows/ci.yml` for push + pull_request
+  - Uses Node 20 and local Postgres service container
+  - Runs:
+    1. `npm ci`
+    2. `npm run check-env`
+    3. `npm run db:migrate:ci` (`prisma migrate deploy`)
+    4. `npm test`
+    5. `npm run build`
+    6. `npm run lint --if-present`
+- Added tests for hardening:
+  - `server/env.test.ts` for readable env validation failures
+  - `server/health.test.ts` for health status behavior (`200` vs `503`)
+- Docs updated:
+  - README now includes Health Endpoint and CI sections
+  - Public routes list includes `/api/health`
+  - MVP smoke checklist includes a health check step
+
+### Phase 0 / Workstream 2 (Rate Limiting + Idempotency + Structured Logging)
+- Added request/correlation id propagation:
+  - `proxy.ts` now preserves inbound `x-request-id` or generates one via `randomUUID()`
+  - Request id is forwarded to downstream handlers and echoed in response headers
+  - Server helper added: `server/requestId.ts` (`resolveRequestId`, `getRequestIdFromHeaders`)
+- Added structured logging + monitoring hook:
+  - `server/log.ts` provides JSON logs with consistent fields:
+    - `timestamp`, `level`, `msg`, `request_id`, optional workspace/actor/entity/action metadata
+  - `server/monitor.ts` adds `captureException` / `captureMessage` as a lightweight vendor-neutral hook
+  - WS#2-touched actions/routes now emit structured logs (no raw stack traces shown to users)
+- Added rate-limit core module (`server/rateLimit/*`):
+  - `RateLimitStore` interface + `MemoryRateLimitStore` implementation for local/dev
+  - `rateLimit(...)` helper and typed `RateLimitError` (`429`, retry-after seconds)
+  - Env-aware store selection in `server/env.ts`:
+    - `RATE_LIMIT_STORE=memory` (default)
+    - Redis config keys validated when `RATE_LIMIT_STORE=redis` (future swap path)
+- Enforced idempotency + rate limits on critical actions:
+  - Pack generation trigger (`server/pack-actions.ts`)
+    - Dedupes when active generation job exists (`QUEUED`/`RUNNING`)
+    - Rate limit: `3/60s` per `workspace + actor + requirement`
+  - Async export request trigger (`server/export-actions.ts`)
+    - Dedupes when active export exists for same `pack + kind` (`QUEUED`/`PROCESSING`)
+    - Rate limit: `10/60s` per `workspace + actor + pack + kind`
+  - Requirement write mutations (`server/requirements.ts`)
+    - Rate limit: `30/60s` per `workspace + actor` for create/update/archive paths
+  - CSV download endpoints:
+    - `GET /api/exports/[exportId]/download`
+    - `GET /api/packs/[packId]/export`
+    - Rate limit: `60/60s` per `workspace + actor`
+- Improved failure surfacing (safe + traceable):
+  - Added `server/errors.ts` with `toPublicError(err)` -> stable public error shape with `request_id`
+  - Generation/export dispatch failures continue to persist safe errors (`Job.error` / `Export.error`)
+  - UI banners now include dedupe/rate-limit feedback and request id context for debugging
+- Added WS#2 tests:
+  - request id helper behavior
+  - memory rate limiter window behavior
+  - idempotency helper behavior for generation/export active statuses
+  - env validation for Redis-required vars when `RATE_LIMIT_STORE=redis`
+
+Why this was done:
+- Addresses core MVP operational risks before scale/demo load:
+  - duplicate job creation from repeated clicks
+  - abuse-prone write/download endpoints without server-side throttling
+  - low-debuggability failures without request correlation id and structured logs
+
+### Phase 0 / Workstream 3 (Staging + Backup/Restore Readiness)
+- Added `APP_ENV` to environment validation and staging local conventions:
+  - Allowed values: `local`, `staging`, `prod`
+  - Default: `local`
+  - `.env.staging.example` added; `.env.staging.local` reserved for private staging runtime variables
+- Added staging developer scripts:
+  - `staging:dev`
+  - `staging:check-env`
+  - `staging:db:migrate`
+  - `staging:db:seed`
+  - `staging:db:verify`
+- Added database operations tooling:
+  - `db:backup` (`scripts/db-backup.sh`)
+  - `db:restore` (`scripts/db-restore.sh`)
+  - `db:verify` (`scripts/db-verify.ts`)
+- Added demo seed path: `prisma/seed.ts` and scripts `db:seed`, `staging:db:seed`
+- Added restore runbook: `docs/runbooks/db-backup-restore.md`
+- Added `backups/` to `.gitignore`
+- Updated docs to include Environment and Backup/Restore sections, and staging references.
+
+Why this was done:
+- Make local vs staging environments explicit and repeatable.
+- Provide a clear backup/restore runbook before production/staging demos.
+
+### Phase 1 / Workstream 2A (Requirement Artifacts)
+- Added `RequirementArtifact` storage for grounding inputs attached to `RequirementSnapshot`.
+- Added UI on the requirement detail page to add/edit/delete pasted artifacts for:
+  - `OPENAPI`
+  - `PRISMA_SCHEMA`
+- Artifacts store normalized text plus `content_hash`, and CRUD emits audit events:
+  - `requirement_artifact.created`
+  - `requirement_artifact.updated`
+  - `requirement_artifact.deleted`
+- No parsing or validation yet. `metadata_json` is reserved for the next workstream.
+- Next: Workstream 2B will parse OpenAPI/Prisma artifacts and enforce grounding gates during AI generation.
+
+### Phase 1 / Workstream 2A.1 (Artifact Test Harness Stabilization)
+- Fixed red tests caused by importing Next/server-only runtime boundaries at module load:
+  - AI pack generation now lazy-loads the default OpenAI structured-output runner and critic path.
+  - Requirement Artifact tests now target pure helpers/core logic instead of pulling in auth/navigation-only wrappers.
+- Added focused automated artifact coverage for:
+  - create/update/delete flows
+  - safe audit metadata on create/update/delete
+  - snapshot linkage semantics (artifacts stay on their original snapshot; no inheritance to newer snapshots)
+  - latest-snapshot artifact panel view-model shaping and edit/delete permission flags
+- Workstream 2A is sign-off ready only when `npm test` is green.
+
+### Phase 1 / Workstream 2B (Artifact Parsing + Validation)
+- Added parser-backed artifact summaries for:
+  - `OPENAPI` via YAML/JSON parsing plus OpenAPI validation
+  - `PRISMA_SCHEMA` via `prisma-ast`
+- Valid and invalid parse summaries are stored in `RequirementArtifact.metadata_json`.
+- The artifacts panel now shows `Valid` / `Invalid` / `Unknown` state plus concise summary counts and a short error preview for invalid artifacts.
+- Parsing runs during artifact create/update so all server-action and direct repo writes stay consistent.
+- Next: Workstream 2C will use these stored summaries as grounding gates during AI pack generation.
+
+### Phase 1 / Workstream 2C.1 (OpenAPI Grounding Gate)
+- AI pack generation now looks up the latest valid `OPENAPI` artifact for the target requirement snapshot and passes only a compact grounded operation list into the LLM prompt.
+- Generated `checks.api` entries are validated server-side against grounded `{ method, path }` operations after deterministic pack validation.
+- Grounding mismatches trigger the existing single repair attempt; if mismatches remain after repair, generation fails safely and no misleading grounded pack is persisted.
+- Grounding results are stored in `Job.metadata_json.ai.grounding.openapi`, including `status`, `artifact_id`, operation counts, grounded API-check counts, and safe mismatch details.
+- If no valid `OPENAPI` artifact exists for the snapshot, generation continues unchanged and records grounding as `skipped`.
+- Next phase: Prisma grounding for SQL checks.
+
+### UX Hardening Pass
+- Added shared UI helpers for current and upcoming UX polish work:
+  - persisted expand/collapse previews
+  - copy-to-clipboard button
+  - pure presentation helpers for generation jobs, artifact grounding readiness, and pack/review summaries
+- Added tests covering:
+  - generation job metadata parsing and failure classification
+  - artifact grounding readiness summaries
+  - pack overview / review highlight shaping
+- Build log now lives at `docs/build-log.md`.
+- UI summary now lives at `docs/ui-ux-summary.md`.
+- Requirement detail page UX is now improved with:
+  - sticky header actions
+  - latest-snapshot grounding readiness chips and notes
+  - an explicit in-progress generation banner
+  - richer generation job cards with retry, copy, failure classification, and inline AI/grounding metadata
+- Pack viewer and review UX are now improved with:
+  - sticky action headers
+  - copy affordances for ids and hashes
+  - compact pack summary cards
+  - readable review highlights before raw JSON editing
+  - persisted expansion state for the main snapshot/json surfaces
+- Production validation is green after fixing two existing type-boundary issues in the OpenAI client wrapper and artifact parser.
+
 ## How to Run (Local)
 - Set `.env.local` with Clerk keys + `DATABASE_URL` (Neon Direct URL)
 - Apply migrations: `npm run db:migrate`
@@ -338,4 +524,4 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
 - Test: `npm run test`
 
 ## Next Step (Single Focus)
-Phase 3 Regression Intelligence v1 (dedupe + stale flags)
+Phase 1 / Workstream 2C.2: Add Prisma grounding for SQL checks during AI pack generation.

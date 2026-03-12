@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
@@ -41,12 +41,30 @@ export function RequirementForm({
 }: RequirementFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [isSourceExpanded, setIsSourceExpanded] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const sourceStorageKey = `tracecase.requirement.source_text.${mode}.${requirementId ?? "new"}`;
 
   const form = useForm<RequirementPayload>({
     resolver: zodResolver(requirementPayloadSchema),
     defaultValues: initialValues,
   });
+  const sourceTextValue = form.watch("source_text");
+  const sourceLineCount = sourceTextValue.split(/\r\n|\n/).length;
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const storedValue = window.localStorage.getItem(sourceStorageKey);
+    if (storedValue === "true") {
+      setIsSourceExpanded(true);
+    }
+    if (storedValue === "false") {
+      setIsSourceExpanded(false);
+    }
+  }, [sourceStorageKey]);
 
   const onSubmit = (values: RequirementPayload) => {
     setServerError(null);
@@ -71,7 +89,12 @@ export function RequirementForm({
         }
 
         router.refresh();
-      } catch {
+      } catch (error) {
+        if (error instanceof Error && error.message.trim().length > 0) {
+          setServerError(error.message.slice(0, 260));
+          return;
+        }
+
         setServerError("Unable to save requirement. Please try again.");
       }
     });
@@ -138,11 +161,38 @@ export function RequirementForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="source_text">Source Text</Label>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label htmlFor="source_text">Source Text</Label>
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-muted-foreground">
+              {sourceLineCount} lines | editor collapsed by default
+            </p>
+            <Button
+              aria-expanded={isSourceExpanded}
+              onClick={() =>
+                setIsSourceExpanded((current) => {
+                  const next = !current;
+                  if (typeof window !== "undefined") {
+                    window.localStorage.setItem(sourceStorageKey, String(next));
+                  }
+                  return next;
+                })
+              }
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {isSourceExpanded ? "Collapse editor" : "Expand editor"}
+            </Button>
+          </div>
+        </div>
         <Textarea
+          className={`field-sizing-fixed transition-[min-height] duration-200 ${
+            isSourceExpanded ? "min-h-[60vh]" : "min-h-[220px]"
+          }`}
           id="source_text"
           placeholder="Paste requirement details, flows, acceptance criteria, edge cases..."
-          rows={12}
+          rows={isSourceExpanded ? 18 : 6}
           {...form.register("source_text")}
         />
         {form.formState.errors.source_text ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import {
   savePackReviewAction,
   validatePackJsonAction,
@@ -30,6 +30,7 @@ export function PackJsonReviewEditor({
   readOnlyMessage,
 }: PackJsonReviewEditorProps) {
   const [jsonText, setJsonText] = useState(initialJson);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [validateResult, setValidateResult] =
     useState<ValidatePackJsonResult | null>(null);
   const [isValidating, startValidateTransition] = useTransition();
@@ -37,6 +38,7 @@ export function PackJsonReviewEditor({
     savePackReviewAction.bind(null, packId),
     PACK_REVIEW_INITIAL_SAVE_STATE,
   );
+  const editorStorageKey = `tracecase.pack.review.json.${packId}`;
 
   const handleValidate = () => {
     setValidateResult(null);
@@ -54,13 +56,54 @@ export function PackJsonReviewEditor({
   const saveError = saveState?.error ?? null;
   const saveIssues = Array.isArray(saveState?.issues) ? saveState.issues : [];
   const hasSaveIssues = Boolean(saveError) || saveIssues.length > 0;
+  const jsonLineCount = jsonText.split(/\r\n|\n/).length;
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const storedValue = window.localStorage.getItem(editorStorageKey);
+    if (storedValue === "true") {
+      setIsExpanded(true);
+    }
+    if (storedValue === "false") {
+      setIsExpanded(false);
+    }
+  }, [editorStorageKey]);
 
   return (
     <form action={saveAction} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="pack_json_editor">Pack JSON</Label>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label htmlFor="pack_json_editor">Pack JSON</Label>
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-muted-foreground">
+              {jsonLineCount} lines | preview collapsed by default
+            </p>
+            <Button
+              aria-expanded={isExpanded}
+              onClick={() =>
+                setIsExpanded((current) => {
+                  const next = !current;
+                  if (typeof window !== "undefined") {
+                    window.localStorage.setItem(editorStorageKey, String(next));
+                  }
+                  return next;
+                })
+              }
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {isExpanded ? "Collapse editor" : "Expand editor"}
+            </Button>
+          </div>
+        </div>
         <Textarea
-          className="min-h-[560px] font-mono text-xs leading-6 sm:text-sm"
+          className={`field-sizing-fixed font-mono text-xs leading-6 transition-[min-height] duration-200 sm:text-sm ${
+            isExpanded ? "min-h-[70vh]" : "min-h-[260px]"
+          }`}
           id="pack_json_editor"
           name="content_json"
           onChange={(event) => {

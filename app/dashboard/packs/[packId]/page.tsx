@@ -1,17 +1,24 @@
 import Link from "next/link";
 import { Role } from "@prisma/client";
 import { ExportsAutoRefresh } from "@/components/packs/exports-auto-refresh";
+import { CopyTextButton } from "@/components/ui/copy-text-button";
 import type { PackContentInput } from "@/server/packs/packSchema";
 import { type CanonicalPackContent, validatePackContent } from "@/server/packs/validatePack";
+import {
+  buildPackOverview,
+  readGeneratePackJobMetadata,
+} from "@/lib/packUx";
 import { can, requireRoleMin } from "@/server/authz";
 import { requestPackExportAction } from "@/server/export-actions";
 import { type ExportKind } from "@/server/exports/constants";
 import { listRecentExportsForPack } from "@/server/exports/exportsRepo";
+import { getLatestGeneratePackJobForPack } from "@/server/packs/jobs";
 import { getPack } from "@/server/packs/packsRepo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorAlert, InfoAlert } from "@/components/ui/inline-alert";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
+import { ExpandablePreview } from "@/components/ui/expandable-preview";
 
 type PackViewerPageProps = {
   params: Promise<{
@@ -19,6 +26,9 @@ type PackViewerPageProps = {
   }>;
   searchParams: Promise<{
     export?: string;
+    retry?: string;
+    request_id?: string;
+    exportId?: string;
   }>;
 };
 
@@ -46,35 +56,56 @@ function getExportStatusBadgeVariant(status: string) {
   return "secondary" as const;
 }
 
-function getExportMessage(status?: string): {
+function getExportMessage(
+  status?: string,
+  retryAfterSeconds?: number,
+  requestId?: string,
+  exportId?: string,
+): {
   tone: "info" | "error";
   text: string;
 } | null {
+  const requestSuffix = requestId ? ` (request_id: ${requestId})` : "";
+
   switch (status) {
     case "requested":
       return {
         tone: "info",
         text: "Export requested. The background job is now running.",
       };
+    case "deduped":
+      return {
+        tone: "info",
+        text: `An export job is already in progress for this pack${
+          exportId ? ` (export_id: ${exportId})` : ""
+        }.`,
+      };
+    case "rate-limited":
+      return {
+        tone: "error",
+        text: `Too many export requests. Retry in ${
+          retryAfterSeconds ?? 1
+        }s.${requestSuffix}`,
+      };
     case "dispatch-failed":
       return {
         tone: "error",
-        text: "Failed to dispatch export job. Check the latest FAILED export row.",
+        text: `Failed to dispatch export job. Check the latest FAILED export row.${requestSuffix}`,
       };
     case "pack-not-approved":
       return {
         tone: "error",
-        text: "Only APPROVED packs can be exported.",
+        text: `Only APPROVED packs can be exported.${requestSuffix}`,
       };
     case "invalid-kind":
       return {
         tone: "error",
-        text: "Invalid export type requested.",
+        text: `Invalid export type requested.${requestSuffix}`,
       };
     case "pack-missing":
       return {
         tone: "error",
-        text: "Pack not found in the active workspace.",
+        text: `Pack not found in the active workspace.${requestSuffix}`,
       };
     default:
       return null;
@@ -131,6 +162,7 @@ export default async function PackViewerPage({
 
   let prettyJson = JSON.stringify(pack.content_json, null, 2);
   let canonicalContent: CanonicalPackContent | null = null;
+  let jsonLineCount = prettyJson.split(/\r\n|\n/).length;
   let sourceSummary = {
     requirement_snapshot_id: pack.requirement_snapshot_id,
     requirement_snapshot_version: "n/a",
@@ -141,6 +173,7 @@ export default async function PackViewerPage({
     const canonical = validatePackContent(pack.content_json as PackContentInput).value;
     canonicalContent = canonical;
     prettyJson = JSON.stringify(canonical, null, 2);
+    jsonLineCount = prettyJson.split(/\r\n|\n/).length;
     sourceSummary = {
       requirement_snapshot_id: canonical.source.requirement_snapshot_id,
       requirement_snapshot_version: String(
@@ -153,10 +186,21 @@ export default async function PackViewerPage({
   }
 
   const exportHistory = await listRecentExportsForPack(workspace.id, pack.id, 10);
+  const latestGenerateJob = await getLatestGeneratePackJobForPack(workspace.id, pack.id);
+  const generateMetadata = readGeneratePackJobMetadata(
+    latestGenerateJob?.metadata_json ?? null,
+  );
+  const packOverview = canonicalContent ? buildPackOverview(canonicalContent) : [];
   const newestExport = exportHistory[0];
   const shouldAutoRefreshExports =
     newestExport?.status === "QUEUED" || newestExport?.status === "PROCESSING";
-  const exportMessage = getExportMessage(resolvedSearchParams.export);
+  const retryAfterSeconds = Number.parseInt(resolvedSearchParams.retry ?? "", 10);
+  const exportMessage = getExportMessage(
+    resolvedSearchParams.export,
+    Number.isNaN(retryAfterSeconds) ? undefined : retryAfterSeconds,
+    resolvedSearchParams.request_id,
+    resolvedSearchParams.exportId,
+  );
   const requestKinds: ExportKind[] = ["test_cases", "scenarios"];
 
   if (canonicalContent?.checks.api.length) {
@@ -173,13 +217,14 @@ export default async function PackViewerPage({
 
   return (
     <section className="space-y-4">
-      <div className="rounded-lg border bg-background p-6 shadow-sm">
+      <div className="sticky top-4 z-20 rounded-lg border bg-background/95 p-6 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Pack Viewer</h1>
-            <p className="mt-2 font-mono text-xs text-muted-foreground sm:text-sm">
-              {pack.id}
-            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-xs text-muted-foreground sm:text-sm">
+              <span>{pack.id}</span>
+              <CopyTextButton label="Copy Pack ID" size="sm" value={pack.id} variant="ghost" />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant={getPackStatusBadgeVariant(pack.status)}>
@@ -215,8 +260,14 @@ export default async function PackViewerPage({
           </div>
           <div>
             <dt className="text-muted-foreground">Snapshot ID</dt>
-            <dd className="font-mono text-xs sm:text-sm">
-              {sourceSummary.requirement_snapshot_id}
+            <dd className="flex flex-wrap items-center gap-2 font-mono text-xs sm:text-sm">
+              <span>{sourceSummary.requirement_snapshot_id}</span>
+              <CopyTextButton
+                label="Copy"
+                size="sm"
+                value={sourceSummary.requirement_snapshot_id}
+                variant="ghost"
+              />
             </dd>
           </div>
           <div>
@@ -225,8 +276,46 @@ export default async function PackViewerPage({
           </div>
           <div className="sm:col-span-2">
             <dt className="text-muted-foreground">Source Hash</dt>
-            <dd className="font-mono text-xs sm:text-sm">{sourceSummary.source_hash}</dd>
+            <dd className="flex flex-wrap items-center gap-2 font-mono text-xs sm:text-sm">
+              <span>{sourceSummary.source_hash}</span>
+              <CopyTextButton
+                label="Copy Hash"
+                size="sm"
+                value={sourceSummary.source_hash}
+                variant="ghost"
+              />
+            </dd>
           </div>
+          {generateMetadata ? (
+            <>
+              <div>
+                <dt className="text-muted-foreground">Generation Mode</dt>
+                <dd className="font-medium">{generateMetadata.ai_mode}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Latest Generation</dt>
+                <dd className="font-medium">
+                  {generateMetadata.ai_mode === "openai"
+                    ? `${generateMetadata.ai.model} • attempts ${generateMetadata.ai.attempts}`
+                    : "Placeholder"}
+                </dd>
+              </div>
+              {generateMetadata.ai_mode === "openai" ? (
+                <>
+                  <div>
+                    <dt className="text-muted-foreground">Critic</dt>
+                    <dd className="font-medium">{generateMetadata.ai.critic.verdict}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Grounding</dt>
+                    <dd className="font-medium">
+                      {generateMetadata.ai.grounding.openapi.status}
+                    </dd>
+                  </div>
+                </>
+              ) : null}
+            </>
+          ) : null}
           {pack.status === "APPROVED" ? (
             <>
               <div>
@@ -249,11 +338,36 @@ export default async function PackViewerPage({
         </dl>
       </div>
 
+      {packOverview.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          {packOverview.map((item) => (
+            <div
+              className="rounded-lg border bg-background p-4 shadow-sm"
+              key={item.label}
+            >
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                {item.label}
+              </p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight">{item.value}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <div className="rounded-lg border bg-background p-6 shadow-sm">
         <h2 className="text-xl font-semibold tracking-tight">Content JSON</h2>
-        <pre className="mt-4 overflow-x-auto rounded-md border bg-muted/10 p-4 text-xs leading-6 sm:text-sm">
-          {prettyJson}
-        </pre>
+        <div className="mt-4">
+          <ExpandablePreview
+            collapsedHeightClassName="max-h-[20rem]"
+            contentClassName="overflow-x-auto text-xs leading-6 sm:text-sm"
+            expandLabel="Show full JSON"
+            collapseLabel="Collapse JSON"
+            summary={`${jsonLineCount} lines | schema v${pack.schema_version}`}
+            storageKey={`tracecase.pack.viewer.json.${pack.id}`}
+          >
+            <pre>{prettyJson}</pre>
+          </ExpandablePreview>
+        </div>
       </div>
 
       {exportMessage && exportMessage.tone === "info" ? (
