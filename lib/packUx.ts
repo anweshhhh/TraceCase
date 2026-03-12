@@ -84,7 +84,6 @@ export type GenerationEvidenceMetric = {
 };
 
 export type GenerationEvidence = {
-  summary: string;
   metrics: GenerationEvidenceMetric[];
   notes: string[];
 };
@@ -236,7 +235,6 @@ export function buildGenerationEvidence(
 
   if (metadata.ai_mode === "placeholder") {
     return {
-      summary: "Placeholder mode",
       metrics: [
         {
           label: "Mode",
@@ -311,13 +309,7 @@ export function buildGenerationEvidence(
     notes.push(`Top critic risk: ${truncateLine(metadata.ai.critic.major_risks[0], 120)}`);
   }
 
-  const apiCheckSummary =
-    grounding.status === "skipped"
-      ? `${grounding.api_checks_total} API checks`
-      : `${grounding.api_checks_grounded}/${grounding.api_checks_total} API checks`;
-
   return {
-    summary: `Coverage ${coverage.acceptance_criteria_covered}/${coverage.acceptance_criteria_total} • Grounding ${grounding.status} • ${apiCheckSummary}`,
     metrics,
     notes,
   };

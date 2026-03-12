@@ -217,6 +217,10 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
   - grounding status
   - API check grounding count
 
+### UX Hardening Pass - Evidence Summary Cleanup
+- Removed the redundant collapsed evidence summary text from the latest-job card.
+- `Generation evidence` now stays compact until expanded, which avoids repeating proof already visible inside the expanded panel.
+
 ### Pack Review v1 (Human Edit + Deterministic Validation)
 - Added scoped pack repository module:
   - `getPack(workspaceId, packId)`

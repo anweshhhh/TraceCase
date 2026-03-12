@@ -109,3 +109,15 @@
 - Result:
   - Tests: `66 passed`, `0 failed`
   - Build: `passed`
+
+## 2026-03-12 - UX Hardening Pass - Evidence Summary Cleanup
+
+- Scope:
+  - Removed the redundant collapsed summary text from `Generation evidence`.
+  - Evidence metrics now appear only inside the expanded panel.
+- Commands:
+  - `npm test`
+  - `npm run build`
+- Result:
+  - Tests: `66 passed`, `0 failed`
+  - Build: `passed`

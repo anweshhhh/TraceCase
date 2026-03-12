@@ -586,7 +586,6 @@ export default async function RequirementDetailPage({
                           <summary className="cursor-pointer font-medium text-foreground">
                             <span className="inline-flex flex-wrap items-center gap-2">
                               <span>Generation evidence</span>
-                              <span className="text-muted-foreground">{evidence.summary}</span>
                               {metadata?.ai_mode === "openai" ? (
                                 <Badge variant="outline">{metadata.ai.model}</Badge>
                               ) : null}

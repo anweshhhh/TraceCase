@@ -52,7 +52,7 @@
   - copyable job id
 - Generation jobs now explain themselves without leaving the page:
   - latest run gets a dedicated primary card with the actionable summary
-  - latest run now includes a collapsible `Generation evidence` bar with:
+  - latest run now includes a collapsible `Generation evidence` bar with expanded proof only:
     - coverage
     - attempts
     - grounding status
