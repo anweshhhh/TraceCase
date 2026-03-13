@@ -226,6 +226,16 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
 - Latest-run UI now uses a single `Details` disclosure instead of separate evidence and job-details disclosures.
 - Copy/debug fields were moved out of the collapsed latest-run summary so the first-glance state stays concise.
 
+### Phase 1 / Workstream 2C.2 - Prisma Grounding Gate
+- Added Prisma grounding lookup for the latest valid `PRISMA_SCHEMA` artifact on the target requirement snapshot.
+- AI generation now receives compact grounded Prisma model/field context when available.
+- Concrete SQL checks are validated against grounded Prisma models/fields:
+  - supported checks remain grounded
+  - unsupported concrete checks trigger one repair attempt
+  - if still unsupported after repair, they are downgraded to semantic `needs schema mapping` checks instead of bluffing exact schema details
+- Final grounding proof is stored in `Job.metadata_json.ai.grounding.prisma`.
+- Next phase: expose Prisma grounding proof and semantic fallback more clearly in the review UI.
+
 ### Pack Review v1 (Human Edit + Deterministic Validation)
 - Added scoped pack repository module:
   - `getPack(workspaceId, packId)`

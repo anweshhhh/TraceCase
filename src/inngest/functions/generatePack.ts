@@ -2,9 +2,21 @@ import { JobStatus, PackStatus, type Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { logAuditEvent } from "@/server/audit";
+import { getServerEnv } from "@/server/env";
+import {
+  getLatestValidOpenApiArtifactForSnapshot,
+  getOpenApiGroundingSummary,
+} from "@/server/openapiGrounding";
+import {
+  getLatestValidPrismaArtifactForSnapshot,
+  getPrismaGroundingSummary,
+} from "@/server/prismaGrounding";
 import { GENERATE_PACK_JOB_TYPE } from "@/server/packs/constants";
+import {
+  AiPackGenerationError,
+  generateAiPackWithCritic,
+} from "@/server/packs/generateAiPack";
 import { generatePlaceholderPack } from "@/server/packs/generatePlaceholderPack";
-import { validatePackContent } from "@/server/packs/validatePack";
 import { inngest } from "@/src/inngest/client";
 import { GENERATE_PACK_EVENT } from "@/src/inngest/events";
 
@@ -16,6 +28,10 @@ const eventDataSchema = z.object({
 function toSafeErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "Unknown error";
   return message.slice(0, 500);
+}
+
+function toInputJsonValue(value: unknown) {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
 export const generatePackFunction = inngest.createFunction(
@@ -93,20 +109,46 @@ export const generatePackFunction = inngest.createFunction(
         return found;
       });
 
-      const canonicalContent = await step.run("generate-and-validate", async () => {
-        const draft = generatePlaceholderPack({
-          requirement,
-          snapshot,
-          actorClerkUserId: job.created_by_clerk_user_id,
-        });
+      const generationResult = await step.run("generate-pack-content", async () => {
+        const env = getServerEnv();
 
-        return validatePackContent(draft).value;
+        if (env.AI_PROVIDER === "openai") {
+          const openApiArtifact = await getLatestValidOpenApiArtifactForSnapshot(
+            workspaceId,
+            snapshot.id,
+          );
+          const prismaArtifact = await getLatestValidPrismaArtifactForSnapshot(
+            workspaceId,
+            snapshot.id,
+          );
+
+          return generateAiPackWithCritic({
+            requirement,
+            snapshot,
+            openApiGrounding: openApiArtifact
+              ? getOpenApiGroundingSummary(openApiArtifact)
+              : null,
+            prismaGrounding: prismaArtifact
+              ? getPrismaGroundingSummary(prismaArtifact)
+              : null,
+          });
+        }
+
+        return {
+          content: generatePlaceholderPack({
+            requirement,
+            snapshot,
+            actorClerkUserId: job.created_by_clerk_user_id,
+          }),
+          metadata: {
+            ai_mode: "placeholder" as const,
+          },
+        };
       });
 
       const persisted = await step.run("persist-pack-and-job", async () => {
-        const contentJson = JSON.parse(
-          JSON.stringify(canonicalContent),
-        ) as Prisma.InputJsonValue;
+        const contentJson = toInputJsonValue(generationResult.content);
+        const metadataJson = toInputJsonValue(generationResult.metadata);
 
         return db.$transaction(async (tx) => {
           const createdPack = await tx.pack.create({
@@ -115,7 +157,7 @@ export const generatePackFunction = inngest.createFunction(
               requirement_id: requirement.id,
               requirement_snapshot_id: snapshot.id,
               status: PackStatus.NEEDS_REVIEW,
-              schema_version: canonicalContent.schema_version,
+              schema_version: generationResult.content.schema_version,
               content_json: contentJson,
               created_by_clerk_user_id: job.created_by_clerk_user_id,
             },
@@ -128,6 +170,7 @@ export const generatePackFunction = inngest.createFunction(
             },
             data: {
               status: JobStatus.SUCCEEDED,
+              metadata_json: metadataJson,
               output_pack_id: createdPack.id,
               error: null,
               finished_at: new Date(),
@@ -147,6 +190,27 @@ export const generatePackFunction = inngest.createFunction(
             },
             client: tx,
           });
+
+          if (generationResult.metadata.ai_mode === "openai") {
+            await logAuditEvent({
+              workspaceId,
+              actorClerkUserId: job.created_by_clerk_user_id,
+              action: "pack.ai_generated",
+              entityType: "pack",
+              entityId: createdPack.id,
+              metadata: {
+                provider: generationResult.metadata.ai.provider,
+                model: generationResult.metadata.ai.model,
+                attempts: generationResult.metadata.ai.attempts,
+                verdict: generationResult.metadata.ai.critic.verdict,
+                grounding_status:
+                  generationResult.metadata.ai.grounding.openapi.status,
+                prisma_grounding_status:
+                  generationResult.metadata.ai.grounding.prisma.status,
+              },
+              client: tx,
+            });
+          }
 
           await logAuditEvent({
             workspaceId,
@@ -171,6 +235,10 @@ export const generatePackFunction = inngest.createFunction(
       return persisted;
     } catch (error) {
       const safeError = toSafeErrorMessage(error);
+      const metadataJson =
+        error instanceof AiPackGenerationError
+          ? toInputJsonValue(error.metadata)
+          : undefined;
 
       await step.run("mark-job-failed", async () => {
         await db.$transaction(async (tx) => {
@@ -183,6 +251,7 @@ export const generatePackFunction = inngest.createFunction(
               status: JobStatus.FAILED,
               error: safeError,
               finished_at: new Date(),
+              ...(metadataJson ? { metadata_json: metadataJson } : {}),
             },
           });
 
