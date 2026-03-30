@@ -12,8 +12,12 @@ import {
 import { EXPORT_KINDS, type ExportKind } from "@/server/exports/constants";
 import { logAuditEvent } from "@/server/audit";
 import { can, getActiveWorkspaceContext } from "@/server/authz";
+import { toPublicError } from "@/server/errors";
+import { logger } from "@/server/log";
 import type { PackContentInput } from "@/server/packs/packSchema";
 import { PackValidationError, validatePackContent } from "@/server/packs/validatePack";
+import { RateLimitError, rateLimit } from "@/server/rateLimit";
+import { getRequestIdFromHeaders } from "@/server/requestId";
 
 export const runtime = "nodejs";
 
@@ -59,9 +63,13 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ packId: string }> },
 ) {
+  const requestId = await getRequestIdFromHeaders();
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized", request_id: requestId },
+      { status: 401, headers: { "x-request-id": requestId } },
+    );
   }
 
   const kind = getExportKind(request);
@@ -70,8 +78,9 @@ export async function GET(
       {
         error:
           "Invalid export kind. Use one of: scenarios, test_cases, api_checks, sql_checks, etl_checks.",
+        request_id: requestId,
       },
-      { status: 400 },
+      { status: 400, headers: { "x-request-id": requestId } },
     );
   }
 
@@ -80,9 +89,48 @@ export async function GET(
 
   if (!can(membership.role, "export:download")) {
     return NextResponse.json(
-      { error: "Forbidden: you do not have export permission." },
-      { status: 403 },
+      {
+        error: "Forbidden: you do not have export permission.",
+        request_id: requestId,
+      },
+      { status: 403, headers: { "x-request-id": requestId } },
     );
+  }
+
+  try {
+    await rateLimit({
+      key: `rl:download:${workspace.id}:${userId}`,
+      limit: 60,
+      windowSeconds: 60,
+      requestId,
+    });
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      const publicError = toPublicError(error, requestId);
+      logger.warn("rate_limited", {
+        request_id: requestId,
+        workspace_id: workspace.id,
+        actor_clerk_user_id: userId,
+        action: "rate_limited",
+        metadata: {
+          key: `rl:download:${workspace.id}:${userId}`,
+          retry_after_seconds: publicError.retry_after_seconds,
+        },
+      });
+      return new Response(
+        `${publicError.code}: ${publicError.message} (request_id: ${publicError.request_id})`,
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "x-request-id": requestId,
+            "Retry-After": String(publicError.retry_after_seconds ?? 1),
+          },
+        },
+      );
+    }
+
+    throw error;
   }
 
   const pack = await db.pack.findFirst({
@@ -100,15 +148,18 @@ export async function GET(
 
   if (!pack) {
     return NextResponse.json(
-      { error: "Pack not found in the active workspace." },
-      { status: 404 },
+      {
+        error: "Pack not found in the active workspace.",
+        request_id: requestId,
+      },
+      { status: 404, headers: { "x-request-id": requestId } },
     );
   }
 
   if (pack.status !== "APPROVED") {
     return NextResponse.json(
-      { error: "Only APPROVED packs can be exported." },
-      { status: 400 },
+      { error: "Only APPROVED packs can be exported.", request_id: requestId },
+      { status: 400, headers: { "x-request-id": requestId } },
     );
   }
 
@@ -118,14 +169,17 @@ export async function GET(
   } catch (error) {
     if (error instanceof PackValidationError) {
       return NextResponse.json(
-        { error: "Pack content is invalid and cannot be exported." },
-        { status: 500 },
+        {
+          error: "Pack content is invalid and cannot be exported.",
+          request_id: requestId,
+        },
+        { status: 500, headers: { "x-request-id": requestId } },
       );
     }
 
     return NextResponse.json(
-      { error: toSafeErrorMessage(error) },
-      { status: 500 },
+      { error: toSafeErrorMessage(error), request_id: requestId },
+      { status: 500, headers: { "x-request-id": requestId } },
     );
   }
 
@@ -148,6 +202,7 @@ export async function GET(
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="${pack.id}_${kind}.csv"`,
       "Cache-Control": "no-store",
+      "x-request-id": requestId,
     },
   });
 }

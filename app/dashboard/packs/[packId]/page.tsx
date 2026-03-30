@@ -295,12 +295,14 @@ export default async function PackViewerPage({
               <div>
                 <dt className="text-muted-foreground">Latest Generation</dt>
                 <dd className="font-medium">
-                  {generateMetadata.ai_mode === "openai"
+                  {generateMetadata.ai_mode === "openai" && generateMetadata.ai
                     ? `${generateMetadata.ai.model} • attempts ${generateMetadata.ai.attempts}`
-                    : "Placeholder"}
+                    : generateMetadata.ai_mode === "openai"
+                      ? "OpenAI metadata pending"
+                      : "Placeholder"}
                 </dd>
               </div>
-              {generateMetadata.ai_mode === "openai" ? (
+              {generateMetadata.ai_mode === "openai" && generateMetadata.ai ? (
                 <>
                   <div>
                     <dt className="text-muted-foreground">Critic</dt>

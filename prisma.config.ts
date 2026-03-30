@@ -3,6 +3,13 @@ import { defineConfig } from "prisma/config";
 
 loadEnv({ path: ".env", quiet: true });
 loadEnv({ path: ".env.local", override: true, quiet: true });
+const appEnv = process.env.APP_ENV?.trim() || "local";
+const secondaryEnvFile =
+  appEnv === "staging" ? ".env.staging.local" : ".env.local";
+
+if (appEnv === "staging") {
+  loadEnv({ path: secondaryEnvFile, override: true, quiet: true });
+}
 
 export default defineConfig({
   schema: "prisma/schema.prisma",

@@ -51,6 +51,11 @@ enum ExportStatus {
   FAILED
 }
 
+enum RequirementArtifactType {
+  OPENAPI
+  PRISMA_SCHEMA
+}
+
 model Workspace {
   id                  String       @id @default(cuid())
   name                String
@@ -61,6 +66,7 @@ model Workspace {
   audit_events        AuditEvent[]
   requirements        Requirement[]
   requirement_snapshots RequirementSnapshot[]
+  requirement_artifacts RequirementArtifact[]
   packs               Pack[]
   jobs                Job[]
   exports             Export[]
@@ -122,6 +128,7 @@ model RequirementSnapshot {
   created_at              DateTime    @default(now())
   workspace               Workspace   @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
   requirement             Requirement @relation(fields: [requirement_id], references: [id], onDelete: Cascade)
+  artifacts               RequirementArtifact[]
   packs                   Pack[]
 
   @@unique([requirement_id, version])
@@ -188,4 +195,25 @@ model Export {
   @@index([workspace_id, created_at])
   @@index([workspace_id, pack_id])
   @@index([workspace_id, status])
+}
+
+model RequirementArtifact {
+  id                      String                  @id @default(cuid())
+  workspace_id            String
+  requirement_snapshot_id String
+  type                    RequirementArtifactType
+  title                   String
+  content_text            String                  @db.Text
+  content_hash            String
+  mime_type               String                  @default("text/plain")
+  metadata_json           Json?
+  created_by_clerk_user_id String
+  created_at              DateTime                @default(now())
+  updated_at              DateTime                @updatedAt
+  workspace               Workspace               @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  requirement_snapshot    RequirementSnapshot     @relation(fields: [requirement_snapshot_id], references: [id], onDelete: Cascade)
+
+  @@index([workspace_id, requirement_snapshot_id])
+  @@index([workspace_id, type])
+  @@index([workspace_id, created_at])
 }

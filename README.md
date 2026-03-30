@@ -24,6 +24,7 @@ APP_ENV=local
 AI_PROVIDER=placeholder
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5-mini
+OPENAI_GENERATION_MODEL=
 OPENAI_STORE=false
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
 CLERK_SECRET_KEY=YOUR_SECRET_KEY
@@ -230,18 +231,38 @@ npm run staging:db:verify
 ## AI Pack Generation (Real LLM)
 
 - Enable real LLM-backed generation by setting `AI_PROVIDER=openai` and `OPENAI_API_KEY` on the server. The client never calls OpenAI directly.
-- `OPENAI_MODEL` is configurable and defaults to `gpt-5-mini`.
+- `OPENAI_MODEL` is the critic/default model and defaults to `gpt-5-mini`.
+- `OPENAI_GENERATION_MODEL` is optional. When set, initial generation and repair generation use that stronger model while the critic continues using `OPENAI_MODEL`.
 - Requests are sent with `store: false` by default. Override only if you intentionally set `OPENAI_STORE=true`.
 - The OpenAI path uses Responses API structured outputs locked to Pack JSON Schema v1.0, then runs deterministic `validatePackContent()` before persistence.
+- TraceCase now extracts the `Acceptance Criteria:` section into a deterministic coverage plan with stable `AC-xx` ids plus expected layers such as `UI`, `API`, `SQL`, `AUDIT`, `SECURITY`, and `SESSION`.
+- Generated scenarios, test cases, and checks are expected to reference the relevant `AC-xx` ids in existing fields such as `tags`, and deterministic coverage mapping runs before the final critic pass.
+- If deterministic AC coverage is obviously incomplete, TraceCase performs one repair attempt targeted at the uncovered `AC-xx` ids before relying on the critic's broader judgment.
+- When the critic still finds uncovered `AC-xx` items, TraceCase now turns those gaps into deterministic repair obligations such as `add_ui_case`, `add_api_case_or_check`, `add_audit_or_logging_check`, or `add_session_case_or_check`.
+- Repair is now layer-aware: UI criteria must gain UI-facing tagged coverage, API/rate-limit criteria need concrete API coverage, and audit/session criteria need layer-appropriate checks before the final critic pass.
+- Generated packs now go through deterministic sanitization before validation so reversible structural defects such as swapped `source_refs` ranges and method casing noise do not force unnecessary repair loops.
+- Final critic failures now preserve explicit uncovered `AC-xx` ids plus closure-plan and closure-validation metadata in `Job.metadata_json.ai`.
+- When Prisma grounding downgrades concrete SQL into semantic `NEEDS_MAPPING:` checks, TraceCase now records compensating-coverage requirements and expects stronger concrete coverage in other layers such as UI, API, session, or audit coverage.
 - A second server-side critic call checks requirement coverage and genericity. If the critic finds uncovered acceptance criteria or weak/generic coverage, TraceCase performs one repair generation attempt, validates again, re-runs the critic, and stores the final critic report in `Job.metadata_json.ai`.
 - When a valid `OPENAPI` artifact exists for the target requirement snapshot, TraceCase passes the parsed operation list into generation, validates generated API checks against grounded `{ method, path }` operations, repairs once if mismatches are found, and fails safely if mismatches remain after repair.
-- When a valid `PRISMA_SCHEMA` artifact exists for the target requirement snapshot, TraceCase passes the parsed model/field summary into generation, validates concrete SQL checks against grounded Prisma models/fields, repairs once if mismatches are found, and then downgrades any still-unsafe concrete SQL checks into semantic `needs schema mapping` checks instead of bluffing unsupported schema details.
+- When a valid `PRISMA_SCHEMA` artifact exists for the target requirement snapshot, TraceCase passes the parsed model/field summary into generation, validates concrete SQL checks against grounded Prisma models/fields, repairs once if mismatches are found, and then downgrades any still-unsafe concrete SQL checks into semantic `NEEDS_MAPPING:` checks instead of bluffing unsupported schema details.
+- Manual verification note:
+  - create a requirement with multiple numbered acceptance criteria
+  - generate a pack and inspect pack `tags` for `AC-xx`
+  - inspect `Job.metadata_json.ai.coverage_plan` and `Job.metadata_json.ai.coverage_map`
+  - if generation fails, inspect `Job.metadata_json.ai.critic.coverage.uncovered` for explicit uncovered `AC-xx` ids
+  - inspect `Job.metadata_json.ai.coverage_closure_plan` and `Job.metadata_json.ai.coverage_closure_validation` to see the deterministic repair obligations and whether repair closed them in a layer-appropriate way
+  - inspect `Job.metadata_json.ai.sanitization` to see whether initial or repaired candidates needed deterministic structural fixes before validation
+  - inspect `Job.metadata_json.ai.compensating_coverage` when Prisma fallback produced semantic SQL checks, especially for UI/API/session/audit-heavy acceptance criteria
+- OpenAI generation is bounded by a 12-minute workflow deadline. While a job is running, `Job.metadata_json.runtime` stores the current stage, attempt, deadline, and generation/critic models so the latest-run UI can show stage-aware progress and deadline-aware failures.
 - If no valid `OPENAPI` artifact exists for that snapshot, generation continues unchanged and records grounding as `skipped` in `Job.metadata_json.ai.grounding.openapi`.
 - If no valid `PRISMA_SCHEMA` artifact exists for that snapshot, generation continues unchanged and records grounding as `skipped` in `Job.metadata_json.ai.grounding.prisma`.
 - Manual grounding note:
   - attach a valid `OPENAPI` artifact to the latest snapshot, generate a pack, and inspect `Job.metadata_json.ai.grounding.openapi` for `status`, `artifact_id`, grounded counts, and any mismatch details.
   - for a mismatch smoke test, use an artifact that omits an endpoint the requirement implies and confirm the job repairs once, then fails safely if grounded API checks still do not match.
   - attach a valid `PRISMA_SCHEMA` artifact to the latest snapshot, generate a pack, and inspect `Job.metadata_json.ai.grounding.prisma` for `status`, `artifact_id`, grounded counts, semantic-count fallback, and any mismatch details.
+  - for a mismatch smoke test, use grounded Prisma names like `User.lastLoginAt` but a requirement that encourages concrete SQL. Confirm unsupported concrete SQL is downgraded to a `NEEDS_MAPPING:` query hint instead of saving fake schema details.
+  - for a runtime smoke test, start generation and inspect `Job.metadata_json.runtime.stage` while the job is running. It should move through stages like `initial_generation`, `initial_critic`, or `repair_generation` instead of staying blank until the job finishes.
 
 ## Pack Review v1
 

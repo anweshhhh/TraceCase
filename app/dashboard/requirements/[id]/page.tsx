@@ -534,7 +534,7 @@ export default async function RequirementDetailPage({
                                 <p className="text-sm font-medium text-foreground">
                                   Generation evidence
                                 </p>
-                                {metadata?.ai_mode === "openai" ? (
+                                {metadata?.ai_mode === "openai" && metadata.ai ? (
                                   <Badge variant="outline">{metadata.ai.model}</Badge>
                                 ) : null}
                               </div>
@@ -581,7 +581,7 @@ export default async function RequirementDetailPage({
                                 />
                               </dd>
                             </div>
-                            {metadata?.ai_mode === "openai" ? (
+                            {metadata?.ai_mode === "openai" && metadata.ai ? (
                               <>
                                 <div>
                                   <dt className="text-muted-foreground">Critic verdict</dt>
@@ -619,6 +619,7 @@ export default async function RequirementDetailPage({
                             ) : null}
                           </dl>
                           {metadata?.ai_mode === "openai" &&
+                          metadata.ai &&
                           metadata.ai.grounding.openapi.mismatches.length > 0 ? (
                             <div className="space-y-2 text-muted-foreground">
                               <p className="font-medium text-foreground">
@@ -698,7 +699,7 @@ export default async function RequirementDetailPage({
                             {job.status === "FAILED" ? (
                               <Badge variant="destructive">{failure.label}</Badge>
                             ) : null}
-                            {metadata?.ai_mode === "openai" ? (
+                            {metadata?.ai_mode === "openai" && metadata.ai ? (
                               <Badge
                                 variant={
                                   metadata.ai.grounding.openapi.status === "grounded"
@@ -725,7 +726,7 @@ export default async function RequirementDetailPage({
                               variant="ghost"
                             />
                           </div>
-                          {metadata?.ai_mode === "openai" ? (
+                          {metadata?.ai_mode === "openai" && metadata.ai ? (
                             <p className="text-xs text-muted-foreground">
                               {metadata.ai.model} • attempts {metadata.ai.attempts} • API checks {metadata.ai.grounding.openapi.api_checks_grounded}/{metadata.ai.grounding.openapi.api_checks_total}
                             </p>

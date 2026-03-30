@@ -37,3 +37,27 @@ test("rejects when test case references missing scenario", () => {
       error.message.includes("references missing scenario_id"),
   );
 });
+
+test("rejects when an API check is missing method before grounding", () => {
+  const invalidPack = structuredClone(examplePack);
+  delete invalidPack.checks.api[0].method;
+
+  assert.throws(
+    () => validatePackContent(invalidPack),
+    (error) =>
+      error instanceof PackValidationError &&
+      error.message.includes("checks.api[0] is missing method"),
+  );
+});
+
+test("rejects when an API check is missing endpoint before grounding", () => {
+  const invalidPack = structuredClone(examplePack);
+  delete invalidPack.checks.api[0].endpoint;
+
+  assert.throws(
+    () => validatePackContent(invalidPack),
+    (error) =>
+      error instanceof PackValidationError &&
+      error.message.includes("checks.api[0] is missing endpoint"),
+  );
+});

@@ -37,7 +37,12 @@ export function RequirementStatusButton({
         }
 
         router.refresh();
-      } catch {
+      } catch (error) {
+        if (error instanceof Error && error.message.trim().length > 0) {
+          setServerError(error.message.slice(0, 260));
+          return;
+        }
+
         setServerError("Unable to update status. Please try again.");
       }
     });

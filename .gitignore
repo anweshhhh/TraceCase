@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+backups/
 
 # debug
 npm-debug.log*
@@ -45,3 +46,5 @@ next-env.d.ts
 /.clerk/
 
 /lib/generated/prisma
+
+Test case results/

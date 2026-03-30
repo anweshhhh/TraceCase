@@ -4,9 +4,9 @@ import {
   SignUpButton,
   SignedIn,
   SignedOut,
-  UserButton,
 } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
+import { ClientUserButton } from "@/components/clerk/user-button";
 
 export default function Home() {
   return (
@@ -35,7 +35,7 @@ export default function Home() {
             </SignUpButton>
           </SignedOut>
           <SignedIn>
-            <UserButton />
+            <ClientUserButton />
           </SignedIn>
         </div>
       </main>

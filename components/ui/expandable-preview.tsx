@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
 type ExpandablePreviewProps = {
@@ -26,24 +26,24 @@ export function ExpandablePreview({
   storageKey,
   defaultExpanded = false,
 }: ExpandablePreviewProps) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
-  const contentId = useId();
-
-  useEffect(() => {
+  const [isExpanded, setIsExpanded] = useState(() => {
     if (!storageKey || typeof window === "undefined") {
-      return;
+      return defaultExpanded;
     }
 
     const storedValue = window.localStorage.getItem(storageKey);
 
     if (storedValue === "true") {
-      setIsExpanded(true);
+      return true;
     }
 
     if (storedValue === "false") {
-      setIsExpanded(false);
+      return false;
     }
-  }, [storageKey]);
+
+    return defaultExpanded;
+  });
+  const contentId = useId();
 
   const toggleExpanded = () => {
     setIsExpanded((current) => {

@@ -65,7 +65,7 @@ function canonicalizePackContent(input: PackContent): CanonicalPackContent {
       api: (input.checks.api ?? []).map((check) => ({
         ...check,
         title: check.title.trim(),
-        method: check.method?.trim() || undefined,
+        method: check.method?.trim().toLowerCase() || undefined,
         endpoint: check.endpoint?.trim() || undefined,
         assertions: check.assertions.map((item) => item.trim()),
         source_refs: check.source_refs.map((sourceRef) => ({
@@ -222,6 +222,14 @@ function runDeterministicChecks(pack: CanonicalPackContent): string[] {
       `checks.api[${index}]`,
       issues,
     );
+
+    if (!check.method) {
+      issues.push(`checks.api[${index}] is missing method`);
+    }
+
+    if (!check.endpoint) {
+      issues.push(`checks.api[${index}] is missing endpoint`);
+    }
   });
 
   pack.checks.sql.forEach((check, index) => {

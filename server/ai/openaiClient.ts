@@ -5,6 +5,10 @@ import type {
   ResponseUsage,
 } from "openai/resources/responses/responses";
 import { getServerEnv } from "@/server/env";
+import {
+  buildStructuredOutputRequestOptions,
+  withStructuredOutputTimeout,
+} from "@/server/ai/openaiClientCore";
 
 export type AiTokenUsage = Pick<
   ResponseUsage,
@@ -19,6 +23,7 @@ export type StructuredOutputRequest = {
   description?: string;
   model?: string;
   store?: boolean;
+  timeoutMs?: number;
 };
 
 export type StructuredOutputResult<T> = {
@@ -57,27 +62,44 @@ function parseStructuredOutput<T>(outputText: string): T {
 export const createStructuredOutput: StructuredOutputRunner = async <T>(
   params: StructuredOutputRequest,
 ) => {
-  const { input, instructions, name, schema, description, model, store } =
+  const {
+    input,
+    instructions,
+    name,
+    schema,
+    description,
+    model,
+    store,
+    timeoutMs,
+  } =
     params;
   const env = getServerEnv();
   const client = getOpenAiClient();
   const resolvedModel = model ?? env.OPENAI_MODEL;
+  const resolvedTimeoutMs = timeoutMs;
 
-  const response = await client.responses.create({
-    model: resolvedModel,
-    instructions,
-    input,
-    store: store ?? env.OPENAI_STORE,
-    text: {
-      format: {
-        type: "json_schema",
-        name,
-        description,
-        strict: true,
-        schema,
-      },
-    },
-  });
+  const response = await withStructuredOutputTimeout(
+    (signal) =>
+      client.responses.create(
+        {
+          model: resolvedModel,
+          instructions,
+          input,
+          store: store ?? env.OPENAI_STORE,
+          text: {
+            format: {
+              type: "json_schema",
+              name,
+              description,
+              strict: true,
+              schema,
+            },
+          },
+        },
+        buildStructuredOutputRequestOptions(resolvedTimeoutMs, signal),
+      ),
+    resolvedTimeoutMs,
+  );
 
   const outputText = response.output_text?.trim();
 

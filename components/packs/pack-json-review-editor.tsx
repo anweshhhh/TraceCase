@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import {
   savePackReviewAction,
   validatePackJsonAction,
@@ -29,8 +29,24 @@ export function PackJsonReviewEditor({
   canValidate,
   readOnlyMessage,
 }: PackJsonReviewEditorProps) {
+  const editorStorageKey = `tracecase.pack.review.json.${packId}`;
   const [jsonText, setJsonText] = useState(initialJson);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    const storedValue = window.localStorage.getItem(editorStorageKey);
+    if (storedValue === "true") {
+      return true;
+    }
+
+    if (storedValue === "false") {
+      return false;
+    }
+
+    return false;
+  });
   const [validateResult, setValidateResult] =
     useState<ValidatePackJsonResult | null>(null);
   const [isValidating, startValidateTransition] = useTransition();
@@ -38,7 +54,6 @@ export function PackJsonReviewEditor({
     savePackReviewAction.bind(null, packId),
     PACK_REVIEW_INITIAL_SAVE_STATE,
   );
-  const editorStorageKey = `tracecase.pack.review.json.${packId}`;
 
   const handleValidate = () => {
     setValidateResult(null);
@@ -57,20 +72,6 @@ export function PackJsonReviewEditor({
   const saveIssues = Array.isArray(saveState?.issues) ? saveState.issues : [];
   const hasSaveIssues = Boolean(saveError) || saveIssues.length > 0;
   const jsonLineCount = jsonText.split(/\r\n|\n/).length;
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const storedValue = window.localStorage.getItem(editorStorageKey);
-    if (storedValue === "true") {
-      setIsExpanded(true);
-    }
-    if (storedValue === "false") {
-      setIsExpanded(false);
-    }
-  }, [editorStorageKey]);
 
   return (
     <form action={saveAction} className="space-y-4">

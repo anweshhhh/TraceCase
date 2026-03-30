@@ -1,6 +1,6 @@
-import { UserButton } from "@clerk/nextjs";
 import { Role } from "@prisma/client";
 import { requireRoleMin } from "@/server/authz";
+import { ClientUserButton } from "@/components/clerk/user-button";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ export default async function DashboardPage() {
             Personal workspace is auto-provisioned on first sign-in.
           </p>
         </div>
-        <UserButton />
+        <ClientUserButton />
       </div>
       <dl className="mt-6 grid gap-4 rounded-md border bg-muted/30 p-4 text-sm sm:grid-cols-2">
         <div>

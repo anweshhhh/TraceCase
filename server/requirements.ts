@@ -11,6 +11,9 @@ import {
 } from "@/lib/validators/requirements";
 import { can, getActiveWorkspaceContext } from "@/server/authz";
 import { logAuditEvent } from "@/server/audit";
+import { logger } from "@/server/log";
+import { RateLimitError, rateLimit } from "@/server/rateLimit";
+import { getRequestIdFromHeaders } from "@/server/requestId";
 
 export class RequirementNotFoundError extends Error {
   constructor() {
@@ -41,6 +44,40 @@ async function assertRequirementEditPermission(
   }
 }
 
+async function enforceRequirementWriteRateLimit(
+  workspaceId: string,
+  actorId: string,
+  operation: "create" | "update" | "archive",
+) {
+  const requestId = await getRequestIdFromHeaders();
+
+  try {
+    await rateLimit({
+      key: `rl:req_write:${workspaceId}:${actorId}:${operation}`,
+      limit: 30,
+      windowSeconds: 60,
+      requestId,
+    });
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      logger.warn("rate_limited", {
+        request_id: requestId,
+        workspace_id: workspaceId,
+        actor_clerk_user_id: actorId,
+        action: "rate_limited",
+        metadata: {
+          key: `rl:req_write:${workspaceId}:${actorId}:${operation}`,
+          limit: 30,
+          window_seconds: 60,
+          retry_after_seconds: error.retryAfterSeconds,
+        },
+      });
+    }
+
+    throw error;
+  }
+}
+
 export async function listRequirements(
   workspaceId: string,
   filters?: { status?: RequirementStatus },
@@ -63,6 +100,7 @@ export async function createRequirement(
   actorId: string,
   payload: RequirementPayload,
 ) {
+  await enforceRequirementWriteRateLimit(workspaceId, actorId, "create");
   await assertRequirementEditPermission(workspaceId, actorId);
   const parsedPayload = requirementPayloadSchema.parse(payload);
   const normalizedSourceText = normalizeSourceText(parsedPayload.source_text);
@@ -140,6 +178,7 @@ export async function updateRequirement(
   requirementId: string,
   payload: RequirementPayload,
 ) {
+  await enforceRequirementWriteRateLimit(workspaceId, actorId, "update");
   await assertRequirementEditPermission(workspaceId, actorId);
   const parsedPayload = requirementPayloadSchema.parse(payload);
   const normalizedSourceText = normalizeSourceText(parsedPayload.source_text);
@@ -244,6 +283,7 @@ export async function setRequirementStatus(
   requirementId: string,
   status: RequirementStatusInput,
 ) {
+  await enforceRequirementWriteRateLimit(workspaceId, actorId, "archive");
   await assertRequirementEditPermission(workspaceId, actorId);
   const parsedStatus = requirementStatusSchema.parse(status);
 

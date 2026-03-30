@@ -20,6 +20,8 @@ export type PrismaGroundingReport = {
   }>;
 };
 
+const NEEDS_MAPPING_PREFIX = "NEEDS_MAPPING:";
+
 function normalizeIdentifier(value: string | null | undefined) {
   if (typeof value !== "string") {
     return null;
@@ -37,6 +39,16 @@ function normalizeIdentifier(value: string | null | undefined) {
 
 function uniqueSorted(values: string[]) {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function isSemanticQueryHint(queryHint: string | undefined) {
+  const normalized = queryHint?.trim();
+
+  if (!normalized) {
+    return true;
+  }
+
+  return normalized.toUpperCase().startsWith(NEEDS_MAPPING_PREFIX);
 }
 
 function extractModelReferences(queryHint: string) {
@@ -178,6 +190,12 @@ function buildSemanticFallbackTitle(title: string) {
   return `${title.replace(/\s*\(needs schema mapping\)$/i, "").trim()} (needs schema mapping)`;
 }
 
+function buildSemanticQueryHint(check: CanonicalPackContent["checks"]["sql"][number]) {
+  const title = check.title.replace(/\s*\(needs schema mapping\)$/i, "").trim();
+
+  return `${NEEDS_MAPPING_PREFIX} Verify ${title.toLowerCase()} using the application's persistence model after exact Prisma schema mapping is confirmed.`;
+}
+
 export function downgradeSqlChecksToSemantic(
   packContent: CanonicalPackContent,
   report: PrismaGroundingReport,
@@ -197,10 +215,10 @@ export function downgradeSqlChecksToSemantic(
     return {
       ...check,
       title: buildSemanticFallbackTitle(check.title),
-      query_hint: undefined,
+      query_hint: buildSemanticQueryHint(check),
       validations: [
-        "Map the affected Prisma model and fields before converting this into a concrete SQL assertion.",
-        "Confirm the required database outcome for this scenario after schema mapping is defined.",
+        "Map the exact Prisma model and field names before converting this into a concrete SQL assertion.",
+        "Confirm the intended persistence outcome once schema mapping is defined.",
       ],
     };
   });
@@ -213,7 +231,9 @@ export function validatePrismaGrounding(
   grounding: PrismaGroundingSummary | null,
 ): PrismaGroundingReport {
   const sqlChecks = packContent.checks.sql ?? [];
-  const semanticCount = sqlChecks.filter((check) => !check.query_hint?.trim()).length;
+  const semanticCount = sqlChecks.filter((check) =>
+    isSemanticQueryHint(check.query_hint?.trim()),
+  ).length;
 
   if (!grounding) {
     return {
@@ -240,9 +260,9 @@ export function validatePrismaGrounding(
   let sqlChecksSemantic = 0;
 
   for (const check of sqlChecks) {
-    const queryHint = check.query_hint?.trim();
+    const queryHint = check.query_hint?.trim() ?? "";
 
-    if (!queryHint) {
+    if (isSemanticQueryHint(queryHint)) {
       sqlChecksSemantic += 1;
       continue;
     }

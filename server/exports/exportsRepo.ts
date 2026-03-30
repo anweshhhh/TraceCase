@@ -6,6 +6,7 @@ import {
   EXPORT_PACK_JOB_TYPE,
   type ExportKind,
 } from "@/server/exports/constants";
+import { ACTIVE_EXPORT_STATUSES } from "@/server/idempotency";
 import { buildExportFileName } from "@/server/exports/fileName";
 
 export async function getPackForExport(workspaceId: string, packId: string) {
@@ -18,6 +19,26 @@ export async function getPackForExport(workspaceId: string, packId: string) {
       id: true,
       status: true,
       requirement_id: true,
+    },
+  });
+}
+
+export async function getActiveExportForPackKind(
+  workspaceId: string,
+  packId: string,
+  kind: ExportKind,
+) {
+  return db.export.findFirst({
+    where: {
+      workspace_id: workspaceId,
+      pack_id: packId,
+      kind,
+      status: {
+        in: [...ACTIVE_EXPORT_STATUSES],
+      },
+    },
+    orderBy: {
+      created_at: "desc",
     },
   });
 }

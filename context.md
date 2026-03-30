@@ -232,7 +232,7 @@ Requirement/User Story (paste text) → Server-side AI draft test pack → Human
 - Concrete SQL checks are validated against grounded Prisma models/fields:
   - supported checks remain grounded
   - unsupported concrete checks trigger one repair attempt
-  - if still unsupported after repair, they are downgraded to semantic `needs schema mapping` checks instead of bluffing exact schema details
+  - if still unsupported after repair, they are downgraded to semantic `NEEDS_MAPPING:` checks instead of bluffing exact schema details
 - Final grounding proof is stored in `Job.metadata_json.ai.grounding.prisma`.
 - Next phase: expose Prisma grounding proof and semantic fallback more clearly in the review UI.
 
@@ -577,3 +577,85 @@ Why this was done:
 
 ## Next Step (Single Focus)
 Phase 1 / Workstream 2C.2: Add Prisma grounding for SQL checks during AI pack generation.
+
+## Reliability Hardening - 2026-03-12
+- Added a bounded OpenAI structured-output request timeout so pack generation jobs fail cleanly instead of hanging in `RUNNING`.
+- Timeout handling now emits a safe retry message and is classified separately in latest-run failure UX as `AI provider timeout`.
+- Reduced AI prompt size for critic and repair loops by sending compact pack summaries instead of full pack JSON.
+- Split OpenAI timeout budgets by stage: longer for pack generation, shorter for critic review.
+- Replaced reliance on the SDK timeout alone with an explicit abort-backed timeout wrapper so hung provider calls cannot leave jobs running indefinitely.
+
+## Phase 1 / Reliability Stabilization
+- Added workflow-level observability for `generate_pack` OpenAI jobs without changing the DB schema. Running jobs now persist `metadata_json.runtime` with stage, attempt, deadline, and generation/critic model names.
+- Added a hard 12-minute workflow deadline for AI pack generation. OpenAI calls now consume the remaining workflow budget instead of using only per-request timeouts.
+- Added `OPENAI_GENERATION_MODEL` so generation/repair can use a stronger model while the critic remains on `OPENAI_MODEL`.
+- Latest-run summaries now understand running runtime metadata and show stage-aware progress plus a dedicated workflow-deadline failure classification.
+- Existing OpenAPI and Prisma grounding behavior remains intact; this pass focused on reliability, deadline enforcement, and observability.
+
+### Reliability Stabilization - generate_pack retry control
+- `generate_pack` is now non-retryable at the Inngest function level (`retries: 0`) because deterministic AI-generation failures were stretching a single job across many minutes and overwriting useful failure context.
+- Added failure-metadata finalization that preserves the last real runtime stage (for example `initial_generation`, `repair_critic`) instead of falling back to a fresh `load_context` runtime block at failure time.
+- Added targeted tests for failure-metadata preservation and non-retryable generation-failure classification.
+
+## Reliability follow-up: preserved runtime stage on generate_pack failure
+- Fixed failure metadata finalization to prefer the last persisted OpenAI runtime metadata already written to the `Job` row.
+- This addresses Inngest replay/resume cases where in-memory stage tracking resets to `load_context` before the failure handler runs.
+- `generate_pack` failures should now keep the last real runtime stage in `Job.metadata_json.runtime` instead of collapsing back to fallback `load_context` metadata.
+
+## Reliability Instrumentation Pass - generate_pack stage evidence
+- Added compact stage-evidence runtime metadata for `generate_pack` jobs without changing generation behavior or grounding rules.
+- `Job.metadata_json.runtime` now records a stage history with enter/exit timestamps, durations, provider-call markers, timeout budgets, requirement size metrics, grounding input counts, pack API/SQL counts, semantic SQL counts, mismatch counts, and compact notes.
+- Running/failing jobs now preserve `critic_entered`, `repair_entered`, `repair_critic_entered`, `last_provider_stage`, `final_outcome`, `final_failure_stage`, and `final_failure_message` so Prisma Studio alone can distinguish provider timeout vs workflow deadline vs grounding vs critic coverage failures.
+- The worker now records `load_context` success with requirement/artifact sizing and records `finalize` success around pack persistence.
+- Latest-run metadata parsing remains backward-compatible while understanding the richer runtime evidence shape.
+
+## Phase 1 / Workstream 3A - Acceptance Criteria Coverage Planner
+- Added a deterministic acceptance-criteria planner for `generate_pack` that extracts numbered items from the `Acceptance Criteria:` section, assigns stable `AC-xx` ids, and tags each criterion with expected coverage layers (`UI`, `API`, `SQL`, `AUDIT`, `SECURITY`, `SESSION`, `OTHER`).
+- Added a deterministic acceptance-coverage map before critic review. Generated scenarios, test cases, and checks are expected to reference `AC-xx` ids via existing fields such as `tags`, and obviously uncovered ids trigger one targeted repair attempt before final critic rejection.
+- The AI generation and repair prompts now include a compact Acceptance Criteria Coverage Plan so generation explicitly plans against each criterion instead of relying only on broad critic feedback.
+- Critic input is now AC-aware and uses the deterministic coverage map as a baseline. Critic failures record explicit uncovered `AC-xx` ids instead of only broad natural-language gaps.
+- Final OpenAI job metadata now stores compact coverage evidence under `metadata_json.ai.coverage_plan`, `metadata_json.ai.coverage_map`, and `metadata_json.ai.critic.coverage.uncovered`.
+- Existing OpenAPI and Prisma grounding behavior remains unchanged.
+- Next likely step: surface grounding and AC coverage proof in the review UI instead of keeping it DB-only.
+
+## Phase 1 / Workstream 3B - Deterministic Coverage Closure
+- Final critic evidence is now preserved more precisely. `metadata_json.ai.critic` stores the latest critic phase (`initial` or `repair`) plus explicit uncovered `AC-xx` ids when critic coverage still fails.
+- Added a deterministic coverage-closure planner that turns uncovered `AC-xx` items into layer-aware repair obligations such as `add_ui_case`, `add_api_case_or_check`, `add_audit_or_logging_check`, and `add_session_case_or_check`.
+- Repair prompts are now driven by uncovered-AC obligations instead of only broad critic prose, so repair is explicitly told which AC ids must be closed and which layer each obligation must satisfy.
+- Added deterministic closure validation before the final critic. `metadata_json.ai.coverage_closure_validation` now records whether the repaired pack actually closed the previously uncovered AC ids in a layer-appropriate way.
+- Added an early deterministic validation for malformed API checks so missing HTTP methods fail in validation before OpenAPI grounding.
+- Next likely step: surface grounding and coverage proof in the UI instead of keeping it DB-only.
+
+## Phase 1 / Workstream 3C - Deterministic Repair Hardening + Final Critic Evidence Preservation
+- Added deterministic sanitization before validation for both initial and repaired AI candidates. Safe structural fixes such as swapped `source_refs` line ranges, API method casing normalization, and safe text trimming now happen before validation without fabricating missing business content.
+- `metadata_json.ai.sanitization` now records compact initial/repair sanitization summaries so we can see whether validation passed only after deterministic cleanup.
+- Final critic evidence preservation is hardened: `metadata_json.ai.critic` now remains the canonical latest critic result, and failed `repair_critic` runs keep explicit uncovered `AC-xx` ids plus reasons in job metadata.
+- Added compensating-coverage validation for cases where Prisma grounding downgrades concrete SQL into semantic `NEEDS_MAPPING:` checks. Session, UI, API/security, and audit-heavy ACs now require stronger concrete coverage in other layers before the repaired pack can pass.
+- Pack validation now fails malformed API checks earlier and more clearly when required fields such as `method`, `endpoint`, or valid `source_refs` are still missing after sanitization.
+- Next likely step: surface sanitization, grounding, and coverage proof together in the review UI instead of keeping it DB-only.
+
+## 2026-03-29 - Live generate_pack recovery follow-up
+- Preserved final `metadata_json.ai` across the Inngest `generate-pack-content` step by serializing `AiPackGenerationError` metadata before crossing the step boundary and restoring it afterward. Failed jobs can now keep critic/grounding/sanitization evidence instead of collapsing to runtime-only metadata.
+- Added deterministic OpenAPI-based API method recovery before validation. If an API check is missing `method` but its `endpoint` uniquely matches one grounded OpenAPI operation, the method is recovered safely from grounding instead of forcing an avoidable repair.
+- Expanded deterministic sanitization so repaired candidates now normalize drifting `source_ref.snapshot_id` values to the current requirement snapshot and reassign duplicate or invalid ids in `clarifying_questions`, `test_cases`, and check collections.
+- Hardened repair prompt guidance so every repair pass now explicitly forbids duplicate ids, requires current-snapshot source refs, and forbids partial API checks without both method and endpoint.
+- Real end-to-end verification succeeded on snapshot `cmn6vk6cv00ylup16qyjx6sy7`: job `cmnc5awro0001upha7bu2ykkt` finished `SUCCEEDED` and produced pack `cmnc5i0j80001upicx2s99pxb` after one repair pass.
+- Runtime evidence from that successful live job showed the system now gets through initial validation, grounding, critic, repair generation, repair validation, repair grounding, and final critic with full `metadata_json.ai` preserved.
+- 2026-03-30 cleanup pass: removed lint-backed unused code and local export artifacts, replaced effect-driven mount/localStorage state with cleaner initialization patterns, and confirmed `npm run lint`, `npm test`, and `npm run build` all pass before packaging the branch.
+
+cat <<'EOF' >> /Users/anweshsingh/Downloads/TraceCase/docs/build-log.md
+
+## 2026-03-30 - Repo cleanup pass
+
+- Scope:
+  - Removed lint-backed unused code and warnings left around the recent reliability work.
+  - Cleaned client-only mounted/localStorage components to avoid effect-driven state warnings.
+  - Excluded generated local export CSVs under `Test case results/` from version control.
+- Commands:
+  - `npm run lint`
+  - `npm test`
+  - `npm run build`
+- Result:
+  - `npm run lint`: `passed`
+  - `npm test`: `147 passed`, `0 failed`
+  - `npm run build`: `passed`
