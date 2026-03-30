@@ -31,6 +31,7 @@ import {
   finalizeGeneratePackFailureMetadata,
   shouldStopRetryingGeneratePackError,
 } from "@/server/packs/generatePackFailure";
+import { resolveGeneratePackSuccessRuntime } from "@/server/packs/generatePackSuccess";
 import {
   restoreGeneratePackStepError,
   serializeGeneratePackStepError,
@@ -297,12 +298,25 @@ export const generatePackFunction = inngest.createFunction(
           })();
 
       const persisted = await step.run("persist-pack-and-job", async () => {
+        const successRuntimeBase =
+          runContext && generationResult.metadata.ai_mode === "openai"
+            ? resolveGeneratePackSuccessRuntime({
+                metadataRuntime: generationResult.metadata.runtime ?? null,
+                lastRuntime: lastRuntimeMetadata,
+                fallbackRuntime: runContext.buildRuntime({
+                  stage: "load_context",
+                  attempt: 1,
+                }),
+              })
+            : null;
+
         if (runContext && generationResult.metadata.ai_mode === "openai") {
           lastRuntimeMetadata = enterGenerationRuntimeStage(
-            lastRuntimeMetadata ?? runContext.buildRuntime({
-              stage: "load_context",
-              attempt: 1,
-            }),
+            successRuntimeBase ??
+              runContext.buildRuntime({
+                stage: "load_context",
+                attempt: 1,
+              }),
             {
               stage: "finalize",
               attempt: generationResult.metadata.ai.attempts,

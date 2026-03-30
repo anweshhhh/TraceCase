@@ -659,3 +659,22 @@ cat <<'EOF' >> /Users/anweshsingh/Downloads/TraceCase/docs/build-log.md
   - `npm run lint`: `passed`
   - `npm test`: `147 passed`, `0 failed`
   - `npm run build`: `passed`
+- 2026-03-30 success-runtime follow-up: fixed the success-path runtime handoff in `generate_pack` so finalized jobs preserve the richer runtime stage history returned by generation instead of collapsing back to a stale worker-side `load_context` runtime. Added focused tests for success-runtime selection.
+
+cat <<'EOF' >> /Users/anweshsingh/Downloads/TraceCase/docs/build-log.md
+
+## 2026-03-30 - Success-path runtime evidence preservation
+
+- Scope:
+  - Fixed the `generate_pack` success path to prefer the richer runtime metadata returned by `generateAiPackWithCritic` when entering/finalizing the `finalize` stage.
+  - Added a focused helper and tests so successful jobs keep full runtime stage history instead of collapsing to `load_context + finalize`.
+- Commands:
+  - `npx tsx --test server/packs/generatePackSuccess.test.ts server/packs/generatePackFailure.test.ts server/packs/generationRunContext.test.ts`
+  - `npm run lint`
+  - `npm test`
+  - `npm run build`
+- Result:
+  - Focused tests: `10 passed`, `0 failed`
+  - `npm run lint`: `passed`
+  - `npm test`: `149 passed`, `0 failed`
+  - `npm run build`: `passed`
