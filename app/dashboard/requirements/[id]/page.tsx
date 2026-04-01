@@ -218,108 +218,65 @@ export default async function RequirementDetailPage({
     artifactReadiness.find((item) => item.type === "PRISMA_SCHEMA") ?? null;
   const latestJob = generationJobs[0] ?? null;
   const historicalJobs = generationJobs.slice(1);
+  const latestJobMetadata = latestJob
+    ? readGeneratePackJobMetadata(latestJob.metadata_json)
+    : null;
+  const latestJobFailure = latestJob
+    ? getGeneratePackJobFailurePresentation(latestJob.error)
+    : null;
+  const latestJobSummary = latestJob
+    ? buildGenerationJobSummary({
+        status: latestJob.status,
+        metadata: latestJobMetadata,
+        error: latestJob.error,
+      })
+    : null;
+  const latestJobEvidence = latestJobMetadata
+    ? buildGenerationEvidence(latestJobMetadata)
+    : null;
 
   return (
-    <section className="space-y-4">
-      <div className="sticky top-4 z-20 rounded-lg border bg-background/95 p-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 space-y-2">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {requirement.title}
-            </h1>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{requirement.module_type}</Badge>
-              <Badge variant={requirement.status === "ACTIVE" ? "default" : "secondary"}>
-                {requirement.status}
-              </Badge>
-              {openApiReadiness ? (
-                <Badge variant={getReadinessBadgeVariant(openApiReadiness.status)}>
-                  {getOpenApiStickyLabel(openApiReadiness.status)}
+    <section className="space-y-6">
+      <div className="space-y-4 rounded-[1.75rem] border bg-background/90 p-5 shadow-sm sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 space-y-3">
+            <Button asChild className="h-auto px-0 text-muted-foreground" size="sm" variant="ghost">
+              <Link href="/dashboard/requirements">Back to Requirements</Link>
+            </Button>
+            <div className="space-y-2">
+              <h1 className="text-3xl font-semibold tracking-tight">
+                {requirement.title}
+              </h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{requirement.module_type}</Badge>
+                <Badge
+                  variant={requirement.status === "ACTIVE" ? "default" : "secondary"}
+                >
+                  {requirement.status}
                 </Badge>
-              ) : null}
-              {latestSnapshot ? (
-                <Badge variant="secondary">Snapshot v{latestSnapshot.version}</Badge>
-              ) : null}
-              {shouldAutoRefreshJobs ? (
-                <Badge variant="secondary">Generation in progress</Badge>
-              ) : null}
+                {latestSnapshot ? (
+                  <Badge variant="secondary">Snapshot v{latestSnapshot.version}</Badge>
+                ) : null}
+                {shouldAutoRefreshJobs ? (
+                  <Badge variant="secondary">Generation in progress</Badge>
+                ) : null}
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Generate against the latest snapshot. Detailed artifact readiness lives below.
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              This page is your working view for the requirement, its artifacts,
+              and the latest draft-pack run. Generate against the newest snapshot,
+              then inspect the latest result without leaving the page.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/dashboard/requirements">Back to Requirements</Link>
-            </Button>
             {canEdit ? (
               <RequirementStatusButton
                 currentStatus={requirement.status}
                 requirementId={requirement.id}
               />
             ) : null}
-            {canGeneratePack ? (
-              <form action={generateDraftPackAction.bind(null, requirement.id)}>
-                <PendingSubmitButton
-                  idleLabel="Generate Draft Pack"
-                  pendingLabel="Generating..."
-                />
-              </form>
-            ) : null}
           </div>
         </div>
-      </div>
-
-      <div className="rounded-lg border bg-background p-4 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight">Generation readiness</h2>
-            <p className="text-sm text-muted-foreground">
-              Latest snapshot inputs used during draft generation.
-            </p>
-          </div>
-          {latestSnapshot ? (
-            <Badge variant="outline">Using snapshot v{latestSnapshot.version}</Badge>
-          ) : null}
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {openApiReadiness ? (
-            <div className="rounded-lg border bg-muted/10 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{openApiReadiness.label}</Badge>
-                <Badge variant={getReadinessBadgeVariant(openApiReadiness.status)}>
-                  {openApiReadiness.status}
-                </Badge>
-              </div>
-              <p className="mt-3 text-sm text-muted-foreground">
-                {openApiReadiness.note}
-              </p>
-            </div>
-          ) : null}
-          {prismaReadiness ? (
-            <div className="rounded-lg border bg-muted/10 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{prismaReadiness.label}</Badge>
-                <Badge variant={getReadinessBadgeVariant(prismaReadiness.status)}>
-                  {prismaReadiness.status}
-                </Badge>
-              </div>
-              <p className="mt-3 text-sm text-muted-foreground">
-                {prismaReadiness.note}
-              </p>
-            </div>
-          ) : null}
-        </div>
-        {!openApiReadiness || openApiReadiness.status !== "valid" ? (
-          <p className="mt-3 text-sm text-muted-foreground">
-            API checks will still generate, but OpenAPI grounding will be skipped unless the latest snapshot has a valid OpenAPI artifact.
-          </p>
-        ) : null}
-        {prismaReadiness?.status === "valid" ? (
-          <p className="mt-3 text-sm text-muted-foreground">
-            Prisma artifacts are parsed and ready for the next grounding phase, but they do not gate generation yet.
-          </p>
-        ) : null}
       </div>
 
       {generationMessage && generationMessage.tone === "info" ? (
@@ -328,436 +285,461 @@ export default async function RequirementDetailPage({
       {generationMessage && generationMessage.tone === "error" ? (
         <ErrorAlert>{generationMessage.text}</ErrorAlert>
       ) : null}
-
-      {newestJob && shouldAutoRefreshJobs ? (
-        <div className="rounded-lg border border-primary/25 bg-primary/5 p-4 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <LoaderCircle className="size-4 animate-spin text-primary" />
-                <p className="font-medium">Draft generation in progress</p>
-                <Badge variant={getJobBadgeVariant(newestJob.status)}>
-                  {newestJob.status}
-                </Badge>
-              </div>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="space-y-6">
+          <div className="rounded-[1.5rem] border bg-background p-6 shadow-sm">
+            <div className="mb-4 space-y-1">
+              <h2 className="text-xl font-semibold tracking-tight">Requirement</h2>
               <p className="text-sm text-muted-foreground">
-                This can take a few minutes. The latest run section below updates automatically.
+                Edit the source, module type, and test focus here. The newest
+                saved snapshot is what generation uses.
               </p>
             </div>
-            <Button asChild size="sm" variant="outline">
-              <Link href="#generation-jobs">Jump to latest run</Link>
-            </Button>
-          </div>
-          <JobsAutoRefresh enabled={shouldAutoRefreshJobs} />
-        </div>
-      ) : null}
-
-      <div className="rounded-lg border bg-background p-6 shadow-sm">
-        {canEdit ? (
-          <RequirementForm
-            initialValues={{
-              title: requirement.title,
-              module_type: requirement.module_type,
-              test_focus: requirement.test_focus.filter(
-                (
-                  focus,
-                ): focus is (typeof TEST_FOCUS_OPTIONS)[number] =>
-                  TEST_FOCUS_OPTIONS.includes(
-                    focus as (typeof TEST_FOCUS_OPTIONS)[number],
+            {canEdit ? (
+              <RequirementForm
+                initialValues={{
+                  title: requirement.title,
+                  module_type: requirement.module_type,
+                  test_focus: requirement.test_focus.filter(
+                    (
+                      focus,
+                    ): focus is (typeof TEST_FOCUS_OPTIONS)[number] =>
+                      TEST_FOCUS_OPTIONS.includes(
+                        focus as (typeof TEST_FOCUS_OPTIONS)[number],
+                      ),
                   ),
-              ),
-              source_text: requirement.source_text,
-            }}
-            mode="edit"
-            requirementId={requirement.id}
-          />
-        ) : (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Read-only view. You do not have edit permissions for requirements.
-            </p>
-            <div className="grid gap-3 rounded-md border bg-muted/20 p-4 text-sm sm:grid-cols-2">
-              <div>
-                <p className="text-muted-foreground">Module Type</p>
-                <p className="font-medium">{requirement.module_type}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Test Focus</p>
-                <p className="font-medium">
-                  {requirement.test_focus.length > 0
-                    ? requirement.test_focus.join(", ")
-                    : "None"}
+                  source_text: requirement.source_text,
+                }}
+                mode="edit"
+                requirementId={requirement.id}
+              />
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Read-only view. You do not have edit permissions for requirements.
                 </p>
-              </div>
-              <div className="sm:col-span-2">
-                <p className="text-muted-foreground">Source Text</p>
-                <div className="mt-1">
-                  <ExpandablePreview
-                    contentClassName="font-sans text-sm"
-                    expandLabel="Show full source"
-                    collapseLabel="Collapse source"
-                    summary={`${currentSourceLineCount} lines | current requirement source`}
-                    storageKey={`tracecase.requirement.current-source.${requirement.id}`}
-                  >
-                    <pre className="whitespace-pre-wrap">{requirement.source_text}</pre>
-                  </ExpandablePreview>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="rounded-lg border bg-background p-6 shadow-sm">
-        <h2 className="text-xl font-semibold tracking-tight">Snapshots</h2>
-        {snapshots.length > 0 ? (
-          <div className="mt-4 grid gap-4 lg:grid-cols-[300px_1fr]">
-            <div className="space-y-2">
-              {snapshots.map((snapshot) => {
-                const isSelected = selectedSnapshot?.id === snapshot.id;
-
-                return (
-                  <Link
-                    className={`block rounded-md border px-3 py-2 text-sm ${
-                      isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/20"
-                    }`}
-                    href={`/dashboard/requirements/${requirement.id}?snapshot=${snapshot.version}`}
-                    key={snapshot.id}
-                  >
-                    <p className="font-medium">v{snapshot.version}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {snapshot.created_at.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      hash {snapshot.source_hash.slice(0, 12)}...
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      by {snapshot.created_by_clerk_user_id}
-                    </p>
-                  </Link>
-                );
-              })}
-            </div>
-            {selectedSnapshot ? (
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">v{selectedSnapshot.version}</Badge>
-                  <Badge variant="secondary">
-                    {selectedSnapshot.source_hash.slice(0, 12)}...
-                  </Badge>
-                </div>
-                <ExpandablePreview
-                  collapsedHeightClassName="max-h-[18rem]"
-                  contentClassName="overflow-x-auto"
-                  expandLabel="Show full snapshot"
-                  collapseLabel="Collapse snapshot"
-                  summary={`${lineIndex.length} lines | snapshot v${selectedSnapshot.version}`}
-                  storageKey={`tracecase.requirement.snapshot.${requirement.id}.${selectedSnapshot.id}`}
-                >
-                  <div className="min-w-[520px] space-y-1 font-mono text-sm">
-                    {lineIndex.map((line) => (
-                      <div className="grid grid-cols-[48px_1fr] gap-3" key={line.lineNo}>
-                        <span className="select-none text-right text-xs text-muted-foreground">
-                          {line.lineNo}
-                        </span>
-                        <span className="whitespace-pre-wrap break-words">
-                          {line.content || " "}
-                        </span>
-                      </div>
-                    ))}
+                <div className="grid gap-3 rounded-md border bg-muted/20 p-4 text-sm sm:grid-cols-2">
+                  <div>
+                    <p className="text-muted-foreground">Module Type</p>
+                    <p className="font-medium">{requirement.module_type}</p>
                   </div>
-                </ExpandablePreview>
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-muted-foreground">
-            No snapshots available for this requirement yet.
-          </p>
-        )}
-      </div>
-
-      <RequirementArtifactsSection requirementId={requirement.id} />
-
-      <div
-        className="rounded-lg border bg-background p-6 shadow-sm"
-        id="generation-jobs"
-      >
-        <h2 className="text-xl font-semibold tracking-tight">Generation Jobs</h2>
-        {generationJobs.length > 0 ? (
-          <div className="mt-4 space-y-4">
-            {latestJob ? (() => {
-              const metadata = readGeneratePackJobMetadata(latestJob.metadata_json);
-              const failure = getGeneratePackJobFailurePresentation(latestJob.error);
-              const summary = buildGenerationJobSummary({
-                status: latestJob.status,
-                metadata,
-                error: latestJob.error,
-              });
-              const evidence = buildGenerationEvidence(metadata);
-
-              return (
-                <div
-                  className={`rounded-lg border p-4 shadow-sm ${getJobSummaryToneClasses(summary.tone)}`}
-                  key={latestJob.id}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1 space-y-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline">Latest run</Badge>
-                        <Badge variant={getJobBadgeVariant(latestJob.status)}>
-                          {latestJob.status}
-                        </Badge>
-                        {latestJob.status === "FAILED" ? (
-                          <Badge variant="destructive">{failure.label}</Badge>
-                        ) : null}
-                      </div>
-                      <div>
-                        <p className="text-lg font-semibold tracking-tight">
-                          {summary.title}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {summary.description}
-                        </p>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Created {latestJob.created_at.toLocaleString()}
-                      </p>
-                      <details className="max-w-[900px] rounded-md border bg-background/80 px-3 py-2 text-xs">
-                        <summary className="cursor-pointer font-medium text-foreground">
-                          Details
-                        </summary>
-                        <div className="mt-3 space-y-4">
-                          {evidence ? (
-                            <div className="space-y-3">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-sm font-medium text-foreground">
-                                  Generation evidence
-                                </p>
-                                {metadata?.ai_mode === "openai" && metadata.ai ? (
-                                  <Badge variant="outline">{metadata.ai.model}</Badge>
-                                ) : null}
-                              </div>
-                              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-                                {evidence.metrics.map((item) => (
-                                  <div
-                                    className={`rounded-md border px-3 py-2 ${getEvidenceToneClasses(item.tone)}`}
-                                    key={item.label}
-                                  >
-                                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                                      {item.label}
-                                    </p>
-                                    <p className="mt-1 text-sm font-semibold tracking-tight">
-                                      {item.value}
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
-                              {evidence.notes.length > 0 ? (
-                                <div className="space-y-1 text-xs text-muted-foreground">
-                                  {evidence.notes.map((note) => (
-                                    <p key={note}>• {note}</p>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          <dl className="grid gap-3 rounded-md border bg-muted/20 p-3 text-xs sm:grid-cols-2">
-                            <div>
-                              <dt className="text-muted-foreground">Created</dt>
-                              <dd className="font-medium text-foreground">
-                                {latestJob.created_at.toLocaleString()}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="text-muted-foreground">Job ID</dt>
-                              <dd className="mt-1 flex flex-wrap items-center gap-2 font-mono text-foreground">
-                                <span>{latestJob.id}</span>
-                                <CopyTextButton
-                                  label="Copy ID"
-                                  size="sm"
-                                  value={latestJob.id}
-                                  variant="ghost"
-                                />
-                              </dd>
-                            </div>
-                            {metadata?.ai_mode === "openai" && metadata.ai ? (
-                              <>
-                                <div>
-                                  <dt className="text-muted-foreground">Critic verdict</dt>
-                                  <dd className="font-medium text-foreground">
-                                    {metadata.ai.critic.verdict}
-                                  </dd>
-                                </div>
-                                <div>
-                                  <dt className="text-muted-foreground">Grounding</dt>
-                                  <dd className="font-medium text-foreground">
-                                    {metadata.ai.grounding.openapi.status}
-                                  </dd>
-                                </div>
-                                <div className="sm:col-span-2">
-                                  <dt className="text-muted-foreground">OpenAPI artifact</dt>
-                                  <dd className="font-mono text-foreground">
-                                    {metadata.ai.grounding.openapi.artifact_id ?? "n/a"}
-                                  </dd>
-                                </div>
-                              </>
-                            ) : null}
-                            {latestJob.output_pack_id ? (
-                              <div className="sm:col-span-2">
-                                <dt className="text-muted-foreground">Pack ID</dt>
-                                <dd className="mt-1 flex flex-wrap items-center gap-2 font-mono text-foreground">
-                                  <span>{latestJob.output_pack_id}</span>
-                                  <CopyTextButton
-                                    label="Copy Pack ID"
-                                    size="sm"
-                                    value={latestJob.output_pack_id}
-                                    variant="ghost"
-                                  />
-                                </dd>
-                              </div>
-                            ) : null}
-                          </dl>
-                          {metadata?.ai_mode === "openai" &&
-                          metadata.ai &&
-                          metadata.ai.grounding.openapi.mismatches.length > 0 ? (
-                            <div className="space-y-2 text-muted-foreground">
-                              <p className="font-medium text-foreground">
-                                Grounding mismatches
-                              </p>
-                              <ul className="list-disc space-y-1 pl-5">
-                                {metadata.ai.grounding.openapi.mismatches.map((mismatch) => (
-                                  <li key={`${latestJob.id}-${mismatch.check_id}`}>
-                                    {mismatch.check_id}: {mismatch.reason}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : null}
-                          {latestJob.status === "FAILED" && latestJob.error ? (
-                            <div className="rounded-md border border-destructive/25 bg-destructive/5 p-3 text-xs">
-                              <p className="font-medium text-destructive">
-                                {failure.description}
-                              </p>
-                              <p className="mt-1 text-destructive/90">
-                                {latestJob.error.slice(0, 320)}
-                              </p>
-                            </div>
-                          ) : null}
-                        </div>
-                      </details>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {latestJob.output_pack_id ? (
-                        <Button asChild size="sm">
-                          <Link href={`/dashboard/packs/${latestJob.output_pack_id}`}>
-                            Open Pack
-                          </Link>
-                        </Button>
-                      ) : null}
-                      {canGeneratePack && latestJob.status === "FAILED" ? (
-                        <form action={generateDraftPackAction.bind(null, requirement.id)}>
-                          <PendingSubmitButton
-                            idleLabel="Retry Generate"
-                            pendingLabel="Retrying..."
-                            size="sm"
-                            variant="outline"
-                          />
-                        </form>
-                      ) : null}
+                  <div>
+                    <p className="text-muted-foreground">Test Focus</p>
+                    <p className="font-medium">
+                      {requirement.test_focus.length > 0
+                        ? requirement.test_focus.join(", ")
+                        : "None"}
+                    </p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <p className="text-muted-foreground">Source Text</p>
+                    <div className="mt-1">
+                      <ExpandablePreview
+                        contentClassName="font-sans text-sm"
+                        expandLabel="Show full source"
+                        collapseLabel="Collapse source"
+                        summary={`${currentSourceLineCount} lines | current requirement source`}
+                        storageKey={`tracecase.requirement.current-source.${requirement.id}`}
+                      >
+                        <pre className="whitespace-pre-wrap">{requirement.source_text}</pre>
+                      </ExpandablePreview>
                     </div>
                   </div>
                 </div>
-              );
-            })() : null}
+              </div>
+            )}
+          </div>
 
-            {historicalJobs.length > 0 ? (
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-                    Recent history
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Most recent first
-                  </p>
-                </div>
+          <RequirementArtifactsSection requirementId={requirement.id} />
+
+          <div className="rounded-[1.5rem] border bg-background p-6 shadow-sm">
+            <div className="space-y-1">
+              <h2 className="text-xl font-semibold tracking-tight">Snapshots</h2>
+              <p className="text-sm text-muted-foreground">
+                Inspect the saved source history and switch between versions when
+                you need to compare edits.
+              </p>
+            </div>
+            {snapshots.length > 0 ? (
+              <div className="mt-4 grid gap-4 lg:grid-cols-[280px_1fr]">
                 <div className="space-y-2">
-                  {historicalJobs.map((job) => {
-                    const metadata = readGeneratePackJobMetadata(job.metadata_json);
-                    const failure = getGeneratePackJobFailurePresentation(job.error);
+                  {snapshots.map((snapshot) => {
+                    const isSelected = selectedSnapshot?.id === snapshot.id;
 
                     return (
-                      <div
-                        className="flex flex-wrap items-start justify-between gap-3 rounded-md border px-3 py-3"
-                        key={job.id}
+                      <Link
+                        className={`block rounded-xl border px-3 py-3 text-sm transition-colors ${
+                          isSelected
+                            ? "border-primary bg-primary/5"
+                            : "hover:bg-muted/20"
+                        }`}
+                        href={`/dashboard/requirements/${requirement.id}?snapshot=${snapshot.version}`}
+                        key={snapshot.id}
                       >
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant={getJobBadgeVariant(job.status)}>
-                              {job.status}
-                            </Badge>
-                            {job.status === "FAILED" ? (
-                              <Badge variant="destructive">{failure.label}</Badge>
-                            ) : null}
-                            {metadata?.ai_mode === "openai" && metadata.ai ? (
-                              <Badge
-                                variant={
-                                  metadata.ai.grounding.openapi.status === "grounded"
-                                    ? "default"
-                                    : metadata.ai.grounding.openapi.status === "skipped"
-                                      ? "secondary"
-                                      : "destructive"
-                                }
-                              >
-                                Grounding: {metadata.ai.grounding.openapi.status}
-                              </Badge>
-                            ) : metadata?.ai_mode === "placeholder" ? (
-                              <Badge variant="outline">Placeholder mode</Badge>
-                            ) : null}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            <span>{job.created_at.toLocaleString()}</span>
-                            <span>•</span>
-                            <span className="font-mono">{job.id}</span>
-                            <CopyTextButton
-                              label="Copy ID"
-                              size="sm"
-                              value={job.id}
-                              variant="ghost"
-                            />
-                          </div>
-                          {metadata?.ai_mode === "openai" && metadata.ai ? (
-                            <p className="text-xs text-muted-foreground">
-                              {metadata.ai.model} • attempts {metadata.ai.attempts} • API checks {metadata.ai.grounding.openapi.api_checks_grounded}/{metadata.ai.grounding.openapi.api_checks_total}
-                            </p>
-                          ) : null}
-                          {job.status === "FAILED" && job.error ? (
-                            <p className="text-xs text-destructive">
-                              {failure.description}
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {job.output_pack_id ? (
-                            <Button asChild size="sm" variant="outline">
-                              <Link href={`/dashboard/packs/${job.output_pack_id}`}>
-                                Open Pack
-                              </Link>
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
+                        <p className="font-medium">v{snapshot.version}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {snapshot.created_at.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          hash {snapshot.source_hash.slice(0, 12)}...
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          by {snapshot.created_by_clerk_user_id}
+                        </p>
+                      </Link>
                     );
                   })}
                 </div>
+                {selectedSnapshot ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">v{selectedSnapshot.version}</Badge>
+                      <Badge variant="secondary">
+                        {selectedSnapshot.source_hash.slice(0, 12)}...
+                      </Badge>
+                    </div>
+                    <ExpandablePreview
+                      collapsedHeightClassName="max-h-[18rem]"
+                      contentClassName="overflow-x-auto"
+                      expandLabel="Show full snapshot"
+                      collapseLabel="Collapse snapshot"
+                      summary={`${lineIndex.length} lines | snapshot v${selectedSnapshot.version}`}
+                      storageKey={`tracecase.requirement.snapshot.${requirement.id}.${selectedSnapshot.id}`}
+                    >
+                      <div className="min-w-[520px] space-y-1 font-mono text-sm">
+                        {lineIndex.map((line) => (
+                          <div className="grid grid-cols-[48px_1fr] gap-3" key={line.lineNo}>
+                            <span className="select-none text-right text-xs text-muted-foreground">
+                              {line.lineNo}
+                            </span>
+                            <span className="whitespace-pre-wrap break-words">
+                              {line.content || " "}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </ExpandablePreview>
+                  </div>
+                ) : null}
               </div>
-            ) : null}
+            ) : (
+              <p className="mt-3 text-sm text-muted-foreground">
+                No snapshots available for this requirement yet.
+              </p>
+            )}
           </div>
-        ) : (
-          <p className="mt-3 text-sm text-muted-foreground">
-            No generation jobs yet for this requirement. Use Generate Draft Pack to create the first draft, and keep this page open to watch live status updates.
-          </p>
-        )}
+        </div>
+
+        <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+          <div className="rounded-[1.5rem] border bg-background p-5 shadow-sm">
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold tracking-tight">Generate draft</h2>
+              <p className="text-sm text-muted-foreground">
+                Launch generation against the newest saved snapshot and inspect the
+                latest run here.
+              </p>
+            </div>
+            <div className="mt-4 space-y-3 rounded-xl border bg-muted/10 p-4">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-muted-foreground">Snapshot</span>
+                <span className="font-medium text-foreground">
+                  {latestSnapshot ? `v${latestSnapshot.version}` : "Missing"}
+                </span>
+              </div>
+              {openApiReadiness ? (
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">{openApiReadiness.label}</span>
+                  <Badge variant={getReadinessBadgeVariant(openApiReadiness.status)}>
+                    {openApiReadiness.status}
+                  </Badge>
+                </div>
+              ) : null}
+              {prismaReadiness ? (
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">{prismaReadiness.label}</span>
+                  <Badge variant={getReadinessBadgeVariant(prismaReadiness.status)}>
+                    {prismaReadiness.status}
+                  </Badge>
+                </div>
+              ) : null}
+            </div>
+            {!openApiReadiness || openApiReadiness.status !== "valid" ? (
+              <p className="mt-3 text-xs text-muted-foreground">
+                OpenAPI grounding will be skipped unless the latest snapshot has a
+                valid OpenAPI artifact.
+              </p>
+            ) : null}
+            {prismaReadiness?.status === "valid" ? (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Prisma grounding is ready for the next run.
+              </p>
+            ) : null}
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              {canGeneratePack ? (
+                <form action={generateDraftPackAction.bind(null, requirement.id)}>
+                  <PendingSubmitButton
+                    idleLabel="Generate Draft Pack"
+                    pendingLabel="Generating..."
+                  />
+                </form>
+              ) : null}
+              {shouldAutoRefreshJobs ? (
+                <div className="flex items-center gap-2 text-sm text-primary">
+                  <LoaderCircle className="size-4 animate-spin" />
+                  Auto-refreshing latest run
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div
+            className={`rounded-[1.5rem] border p-5 shadow-sm ${
+              latestJobSummary
+                ? getJobSummaryToneClasses(latestJobSummary.tone)
+                : "bg-background"
+            }`}
+            id="generation-jobs"
+          >
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold tracking-tight">Latest run</h2>
+              <p className="text-sm text-muted-foreground">
+                The newest draft-pack job, with quick evidence and actions.
+              </p>
+            </div>
+
+            {latestJob && latestJobSummary && latestJobFailure ? (
+              <div className="mt-4 space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={getJobBadgeVariant(latestJob.status)}>
+                    {latestJob.status}
+                  </Badge>
+                  {latestJob.status === "FAILED" ? (
+                    <Badge variant="destructive">{latestJobFailure.label}</Badge>
+                  ) : null}
+                  {latestJobMetadata?.ai_mode === "openai" && latestJobMetadata.ai ? (
+                    <Badge variant="outline">{latestJobMetadata.ai.model}</Badge>
+                  ) : latestJobMetadata?.ai_mode === "placeholder" ? (
+                    <Badge variant="outline">Placeholder mode</Badge>
+                  ) : null}
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-lg font-semibold tracking-tight">
+                    {latestJobSummary.title}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {latestJobSummary.description}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Created {latestJob.created_at.toLocaleString()}
+                  </p>
+                </div>
+
+                {latestJobEvidence ? (
+                  <div className="grid gap-2">
+                    {latestJobEvidence.metrics.slice(0, 4).map((item) => (
+                      <div
+                        className={`rounded-xl border px-3 py-2 ${getEvidenceToneClasses(item.tone)}`}
+                        key={item.label}
+                      >
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                          {item.label}
+                        </p>
+                        <p className="mt-1 text-sm font-semibold tracking-tight">
+                          {item.value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {latestJob.output_pack_id ? (
+                    <Button asChild size="sm">
+                      <Link href={`/dashboard/packs/${latestJob.output_pack_id}`}>
+                        Open Pack
+                      </Link>
+                    </Button>
+                  ) : null}
+                  {canGeneratePack && latestJob.status === "FAILED" ? (
+                    <form action={generateDraftPackAction.bind(null, requirement.id)}>
+                      <PendingSubmitButton
+                        idleLabel="Retry Generate"
+                        pendingLabel="Retrying..."
+                        size="sm"
+                        variant="outline"
+                      />
+                    </form>
+                  ) : null}
+                </div>
+
+                <details className="rounded-xl border bg-background/80 px-3 py-2 text-xs">
+                  <summary className="cursor-pointer font-medium text-foreground">
+                    Details and evidence
+                  </summary>
+                  <div className="mt-3 space-y-4">
+                    <dl className="grid gap-3 rounded-md border bg-muted/20 p-3 text-xs">
+                      <div>
+                        <dt className="text-muted-foreground">Job ID</dt>
+                        <dd className="mt-1 flex flex-wrap items-center gap-2 font-mono text-foreground">
+                          <span>{latestJob.id}</span>
+                          <CopyTextButton
+                            label="Copy ID"
+                            size="sm"
+                            value={latestJob.id}
+                            variant="ghost"
+                          />
+                        </dd>
+                      </div>
+                      {latestJob.output_pack_id ? (
+                        <div>
+                          <dt className="text-muted-foreground">Pack ID</dt>
+                          <dd className="mt-1 flex flex-wrap items-center gap-2 font-mono text-foreground">
+                            <span>{latestJob.output_pack_id}</span>
+                            <CopyTextButton
+                              label="Copy Pack ID"
+                              size="sm"
+                              value={latestJob.output_pack_id}
+                              variant="ghost"
+                            />
+                          </dd>
+                        </div>
+                      ) : null}
+                      {latestJobMetadata?.ai_mode === "openai" && latestJobMetadata.ai ? (
+                        <>
+                          <div>
+                            <dt className="text-muted-foreground">Critic verdict</dt>
+                            <dd className="font-medium text-foreground">
+                              {latestJobMetadata.ai.critic.verdict}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-muted-foreground">OpenAPI grounding</dt>
+                            <dd className="font-medium text-foreground">
+                              {latestJobMetadata.ai.grounding.openapi.status}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-muted-foreground">OpenAPI artifact</dt>
+                            <dd className="font-mono text-foreground">
+                              {latestJobMetadata.ai.grounding.openapi.artifact_id ?? "n/a"}
+                            </dd>
+                          </div>
+                        </>
+                      ) : null}
+                    </dl>
+
+                    {latestJobEvidence?.notes.length ? (
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        {latestJobEvidence.notes.map((note) => (
+                          <p key={note}>• {note}</p>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {latestJobMetadata?.ai_mode === "openai" &&
+                    latestJobMetadata.ai &&
+                    latestJobMetadata.ai.grounding.openapi.mismatches.length > 0 ? (
+                      <div className="space-y-2 text-muted-foreground">
+                        <p className="font-medium text-foreground">
+                          Grounding mismatches
+                        </p>
+                        <ul className="list-disc space-y-1 pl-5">
+                          {latestJobMetadata.ai.grounding.openapi.mismatches.map(
+                            (mismatch) => (
+                              <li key={`${latestJob.id}-${mismatch.check_id}`}>
+                                {mismatch.check_id}: {mismatch.reason}
+                              </li>
+                            ),
+                          )}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    {latestJob.status === "FAILED" && latestJob.error ? (
+                      <div className="rounded-md border border-destructive/25 bg-destructive/5 p-3 text-xs">
+                        <p className="font-medium text-destructive">
+                          {latestJobFailure.description}
+                        </p>
+                        <p className="mt-1 text-destructive/90">
+                          {latestJob.error.slice(0, 320)}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                </details>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">
+                No generation jobs yet. Use Generate Draft Pack to create the first
+                run, then watch the latest result update here.
+              </p>
+            )}
+
+            <JobsAutoRefresh enabled={shouldAutoRefreshJobs} />
+          </div>
+
+          {historicalJobs.length > 0 ? (
+            <div className="rounded-[1.5rem] border bg-background p-5 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold tracking-tight">Recent history</h2>
+                <p className="text-xs text-muted-foreground">Most recent first</p>
+              </div>
+              <div className="mt-4 space-y-2">
+                {historicalJobs.map((job) => {
+                  const metadata = readGeneratePackJobMetadata(job.metadata_json);
+                  const failure = getGeneratePackJobFailurePresentation(job.error);
+
+                  return (
+                    <div
+                      className="rounded-xl border px-3 py-3"
+                      key={job.id}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={getJobBadgeVariant(job.status)}>
+                          {job.status}
+                        </Badge>
+                        {job.status === "FAILED" ? (
+                          <Badge variant="destructive">{failure.label}</Badge>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>{job.created_at.toLocaleString()}</span>
+                        <span>•</span>
+                        <span className="font-mono">{job.id}</span>
+                      </div>
+                      {job.status === "FAILED" && job.error ? (
+                        <p className="mt-2 text-xs text-destructive">
+                          {failure.description}
+                        </p>
+                      ) : null}
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <CopyTextButton
+                          label="Copy ID"
+                          size="sm"
+                          value={job.id}
+                          variant="ghost"
+                        />
+                        {job.output_pack_id ? (
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={`/dashboard/packs/${job.output_pack_id}`}>
+                              Open Pack
+                            </Link>
+                          </Button>
+                        ) : null}
+                        {metadata?.ai_mode === "openai" && metadata.ai ? (
+                          <Badge variant="outline">
+                            {metadata.ai.grounding.openapi.status}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </aside>
       </div>
     </section>
   );
